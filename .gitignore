@@ -1,4 +1,7 @@
 # Custom ignore files
+
+backend-data
+
 homes
 images
 
