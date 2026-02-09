@@ -17,7 +17,6 @@ Subcommands:
   bash              Open a bash shell in the backend container (d-gui-manager-backend)
   create-superuser  Create a user for login (default: admin / 1234; pass --email, --staff as extra args)
   logs              Follow backend container logs
-  supervisorctl     Alias for logs (view backend logs; no supervisord in Rust backend)
 
 Examples:
   ./dev-tool.sh --help
@@ -26,7 +25,6 @@ Examples:
   ./dev-tool.sh create-superuser
   ./dev-tool.sh create-superuser admin mypass --staff
   ./dev-tool.sh logs
-  ./dev-tool.sh supervisorctl
 EOF
 }
 
@@ -60,9 +58,6 @@ case "${1:-}" in
     ;;
   logs)
     run_script "logs" "${@:2}"
-    ;;
-  supervisorctl)
-    run_script "supervisorctl" "${@:2}"
     ;;
   "")
     echo "Please specify a subcommand. Use ./dev-tool.sh --help for usage."
