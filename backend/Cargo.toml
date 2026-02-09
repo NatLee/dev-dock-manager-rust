@@ -1,0 +1,48 @@
+[package]
+name = "dev-dock-manager-api"
+version = "0.1.0"
+edition = "2021"
+description = "Rust backend for dev-dock-manager (parallel to Django, no Google auth)"
+
+[dependencies]
+# Web
+axum = { version = "0.7", features = ["json", "ws"] }
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Auth (JWT only; Google auth removed)
+jsonwebtoken = { version = "10", features = ["aws_lc_rs"] }
+argon2 = "0.5"
+
+# Database
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "migrate"] }
+
+# Docker
+bollard = "0.20"
+
+# Redis (queue + optional WS broadcast)
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+futures-util = "0.3"
+base64 = "0.22"
+uuid = { version = "1", features = ["v4"] }
+
+# Config & env
+dotenvy = "0.15"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# OpenAPI / Swagger (optional, uncomment when adding docs)
+# utoipa = { version = "4", features = ["chrono"] }
+# utoipa-swagger-ui = { version = "8", features = ["axum"] }
+
+[profile.release]
+lto = true
+codegen-units = 1

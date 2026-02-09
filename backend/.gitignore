@@ -1,0 +1,6 @@
+/target
+Cargo.lock
+.env
+*.sqlite
+*.sqlite3
+logs
