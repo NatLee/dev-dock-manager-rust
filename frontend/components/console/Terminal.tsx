@@ -51,6 +51,7 @@ export function Terminal({ containerId, action, onError }: TerminalProps) {
     const ws = new WebSocket(url);
     wsRef.current = ws;
     let initialResizeTimer: ReturnType<typeof setTimeout>;
+    let lineBuffer = "";
     ws.onopen = () => {
       setStatus("connected");
       // 第一則訊息須含 token，後端驗證通過後才處理 action
@@ -75,7 +76,25 @@ export function Terminal({ containerId, action, onError }: TerminalProps) {
       // Delay initial resize so backend has time to create exec (shell) and attach PTY
       initialResizeTimer = setTimeout(doFitAndSendResize, 250);
     };
-    ws.onmessage = (e) => term.write(e.data);
+    ws.onmessage = (e) => {
+      if (action !== "attach") {
+        term.write(e.data);
+        return;
+      }
+      lineBuffer += e.data;
+      const lines = lineBuffer.split(/\r?\n/);
+      lineBuffer = lines.pop() ?? "";
+      const cols = Math.max(1, term.cols);
+      const reflowed =
+        lines
+          .map((line) =>
+            line.length <= cols
+              ? line
+              : line.match(new RegExp(`.{1,${cols}}`, "g"))?.join("\r\n") ?? line
+          )
+          .join("\r\n") + (lines.length ? "\r\n" : "");
+      if (reflowed) term.write(reflowed);
+    };
     ws.onclose = (event) => {
       setStatus("disconnected");
       term.write("\r\n\n[Connection closed]\r\n");
@@ -139,7 +158,8 @@ export function Terminal({ containerId, action, onError }: TerminalProps) {
     };
     window.addEventListener("resize", onWindowResize);
     const resizeObserver = new ResizeObserver(() => {
-      doFitAndSendResize();
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(doFitAndSendResize, 100);
     });
     resizeObserver.observe(el);
     const parent = el.parentElement;
