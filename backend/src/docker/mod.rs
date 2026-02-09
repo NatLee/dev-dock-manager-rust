@@ -4,7 +4,9 @@
 pub mod nvidia;
 pub mod ports;
 
-use bollard::query_parameters::{ListContainersOptionsBuilder, ListImagesOptionsBuilder};
+use bollard::query_parameters::{
+    InspectContainerOptionsBuilder, ListContainersOptionsBuilder, ListImagesOptionsBuilder,
+};
 use bollard::Docker;
 use std::collections::HashMap;
 
@@ -47,7 +49,11 @@ pub async fn list_containers_gui_vnc(
         let id = c.id.as_deref().unwrap_or("");
         let image = c.image.as_deref().unwrap_or("");
         // Image in summary can be tag or id; we need to inspect to get tags and filter.
-        let inspect = match docker.inspect_container(id, None).await {
+        // size=true is required for SizeRw and SizeRootFs to be returned
+        let inspect_opts = InspectContainerOptionsBuilder::default()
+            .size(true)
+            .build();
+        let inspect = match docker.inspect_container(id, Some(inspect_opts)).await {
             Ok(i) => i,
             Err(_) => continue,
         };
