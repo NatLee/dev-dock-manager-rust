@@ -1,36 +1,54 @@
 @import "tailwindcss";
 
-/* Design tokens - Refined Light */
+/* Design tokens - Monokai + Claude light theme */
 :root {
-  --background: #ffffff;
-  --foreground: #0f172a;
-  --color-primary: #2563eb;
-  --color-primary-hover: #1d4ed8;
-  --color-surface: #f1f5f9;
-  --color-surface-nav: #334155;
-  --color-border: #e2e8f0;
-  --color-text: #0f172a;
-  --color-text-muted: #64748b;
-  --color-success: #16a34a;
-  --color-warning: #d97706;
-  --color-error: #dc2626;
+  /* Background */
+  --background: #f5f3ee;
+  --background-elevated: #fffcf9;
+  --foreground: #2d2a26;
+
+  /* Surface */
+  --color-surface: #ede9e2;
+  --color-surface-nav: #e8e4dc;
+
+  /* Primary - Claude Terra Cotta */
+  --color-primary: #c86a4a;
+  --color-primary-hover: #b35a3c;
+
+  /* Accent - Monokai inspired */
+  --color-accent-green: #5a9e3a;
+  --color-accent-cyan: #3a9ba8;
+  --color-accent-amber: #c18a2a;
+  --color-accent-red: #c94a4a;
+
+  /* Semantic (mapped to accents) */
+  --color-success: var(--color-accent-green);
+  --color-warning: var(--color-accent-amber);
+  --color-error: var(--color-accent-red);
+
+  /* Text & border */
+  --color-border: #d4cfc6;
+  --color-text: #2d2a26;
+  --color-text-muted: #6b6560;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0f172a;
-    --foreground: #f1f5f9;
-    --color-surface: #1e293b;
-    --color-surface-nav: #1e293b;
-    --color-border: #334155;
-    --color-text: #f1f5f9;
-    --color-text-muted: #94a3b8;
+    --background: #1e1c19;
+    --foreground: #e8e4dc;
+    --background-elevated: #262420;
+    --color-surface: #2d2a26;
+    --color-surface-nav: #2d2a26;
+    --color-border: #3d3a36;
+    --color-text: #e8e4dc;
+    --color-text-muted: #9a958d;
   }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-background-elevated: var(--background-elevated);
   --color-primary: var(--color-primary);
   --color-primary-hover: var(--color-primary-hover);
   --color-surface: var(--color-surface);
@@ -41,6 +59,10 @@
   --color-success: var(--color-success);
   --color-warning: var(--color-warning);
   --color-error: var(--color-error);
+  --color-accent-green: var(--color-accent-green);
+  --color-accent-cyan: var(--color-accent-cyan);
+  --color-accent-amber: var(--color-accent-amber);
+  --color-accent-red: var(--color-accent-red);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

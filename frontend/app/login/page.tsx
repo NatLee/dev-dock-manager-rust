@@ -55,7 +55,7 @@ export default function LoginPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-[400px] rounded-2xl border border-border bg-background p-8 shadow-xl">
+      <div className="w-full max-w-[400px] rounded-2xl border border-border bg-background-elevated p-8 shadow-xl">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-semibold tracking-tight text-text">
             GUI Manager
@@ -80,7 +80,7 @@ export default function LoginPage() {
               required
               autoComplete="username"
               placeholder="Enter your username"
-              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors"
+              className="w-full rounded-xl border border-border bg-background-elevated px-4 py-3 text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors"
             />
           </div>
           <div className="space-y-2">
@@ -98,12 +98,12 @@ export default function LoginPage() {
               required
               autoComplete="current-password"
               placeholder="Enter your password"
-              className="w-full rounded-xl border border-border bg-background px-4 py-3 text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors"
+              className="w-full rounded-xl border border-border bg-background-elevated px-4 py-3 text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition-colors"
             />
           </div>
           {error && (
             <p
-              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 dark:border-red-900 dark:bg-red-900/20 dark:text-red-200"
+              className="rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-sm text-error"
               role="alert"
             >
               {error}
@@ -112,7 +112,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-primary py-3 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:pointer-events-none"
+            className="w-full rounded-xl bg-primary py-3 text-sm font-medium text-white transition-colors hover:bg-primary-hover focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:pointer-events-none"
           >
             {loading ? "Signing in…" : "Sign in"}
           </button>

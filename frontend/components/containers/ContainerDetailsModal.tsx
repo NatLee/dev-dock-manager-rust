@@ -33,7 +33,7 @@ export function ContainerDetailsModal({ container, onClose }: Props) {
         role="dialog"
         aria-modal
         aria-labelledby="container-details-title"
-        className="relative w-full max-w-lg rounded-2xl border border-border bg-background shadow-xl"
+        className="relative w-full max-w-lg rounded-2xl border border-border bg-background-elevated shadow-xl"
       >
         <div className="flex items-center justify-between gap-4 rounded-t-2xl border-b border-border bg-surface px-4 py-3">
           <h2
@@ -69,8 +69,8 @@ export function ContainerDetailsModal({ container, onClose }: Props) {
                 <span
                   className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${
                     container.status === "running"
-                      ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
-                      : "bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-200"
+                      ? "bg-accent-green/15 text-accent-green"
+                      : "bg-surface text-text-muted"
                   }`}
                 >
                   {container.status}
@@ -97,12 +97,12 @@ export function ContainerDetailsModal({ container, onClose }: Props) {
               <dt className="text-xs font-medium uppercase tracking-wider text-text-muted">Options</dt>
               <dd className="mt-0.5 flex flex-wrap gap-1">
                 {container.privileged && (
-                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                  <span className="rounded bg-accent-amber/15 px-1.5 py-0.5 text-xs font-medium text-accent-amber">
                     Privileged
                   </span>
                 )}
                 {container.nvdocker && (
-                  <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                  <span className="rounded bg-accent-green/15 px-1.5 py-0.5 text-xs font-medium text-accent-green">
                     NV-Docker
                   </span>
                 )}

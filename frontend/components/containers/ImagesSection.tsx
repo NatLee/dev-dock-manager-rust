@@ -1,12 +1,17 @@
 "use client";
 
+import type { Image } from "@/types/api";
 import { useImages } from "@/hooks/useImages";
 import { ImageCard } from "./ImageCard";
 
 const DOCKER_HUB_URL = "https://hub.docker.com/r/natlee/gui-vnc";
 const REPO_README_URL = "https://github.com/NatLee/dev-dock-manager#quick-start";
 
-export function ImagesSection() {
+type Props = {
+  onImageClick?: (image: Image) => void;
+};
+
+export function ImagesSection({ onImageClick }: Props) {
   const { images, loading, error, refetch } = useImages();
 
   return (
@@ -18,7 +23,7 @@ export function ImagesSection() {
         <button
           type="button"
           onClick={() => refetch()}
-          className="rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm font-medium text-text transition-colors hover:bg-surface"
+          className="rounded-lg border border-border bg-background-elevated px-2.5 py-1.5 text-sm font-medium text-text transition-colors hover:bg-surface"
         >
           Refresh
         </button>
@@ -73,12 +78,14 @@ export function ImagesSection() {
           </ul>
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-background shadow-sm">
-          <div className="px-4 py-2">
-            {images.map((img) => (
-              <ImageCard key={img.id} image={img} />
-            ))}
-          </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {images.map((img) => (
+            <ImageCard
+              key={img.id}
+              image={img}
+              onClick={onImageClick ? () => onImageClick(img) : undefined}
+            />
+          ))}
         </div>
       )}
     </section>

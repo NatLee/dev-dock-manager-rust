@@ -26,7 +26,7 @@ export function ContainerActions({
 
   if (waiting) {
     return (
-      <span className="inline-flex items-center rounded-xl bg-amber-100 px-2 py-1 text-sm font-medium text-amber-800">
+      <span className="inline-flex items-center rounded-xl bg-accent-amber/15 px-2 py-1 text-sm font-medium text-accent-amber">
         Waiting
       </span>
     );
@@ -40,35 +40,35 @@ export function ContainerActions({
             href={isSameOrigin ? novncPath : `${origin}${novncPath}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="rounded-xl bg-primary px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            className="rounded-xl bg-primary px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
           >
             NoVNC
           </a>
           <Link
             href={`/dashboard/console/shell/${container.id}`}
             target="_blank"
-            className="rounded-xl bg-primary px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            className="rounded-xl bg-primary px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
           >
             Console
           </Link>
           <Link
             href={`/dashboard/console/attach/${container.id}`}
             target="_blank"
-            className="rounded-xl bg-primary px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            className="rounded-xl bg-primary px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
           >
             Attach
           </Link>
           <button
             type="button"
             onClick={() => onControl(container.id, "restart")}
-            className="rounded-xl bg-amber-500 px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-amber-600"
+            className="rounded-xl bg-accent-amber px-2 py-1 text-sm font-medium text-white transition-colors hover:opacity-90"
           >
             Restart
           </button>
           <button
             type="button"
             onClick={() => onControl(container.id, "stop")}
-            className="rounded-xl bg-amber-500 px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-amber-600"
+            className="rounded-xl bg-accent-amber px-2 py-1 text-sm font-medium text-white transition-colors hover:opacity-90"
           >
             Stop
           </button>
@@ -78,14 +78,14 @@ export function ContainerActions({
           <button
             type="button"
             onClick={() => onControl(container.id, "start")}
-            className="rounded-xl bg-green-600 px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-green-700"
+            className="rounded-xl bg-accent-green px-2 py-1 text-sm font-medium text-white transition-colors hover:opacity-90"
           >
             Start
           </button>
           <button
             type="button"
             onClick={() => onControl(container.id, "remove")}
-            className="rounded-xl bg-red-600 px-2 py-1 text-sm font-medium text-white transition-colors hover:bg-red-700"
+            className="rounded-xl bg-accent-red px-2 py-1 text-sm font-medium text-white transition-colors hover:opacity-90"
           >
             Remove
           </button>

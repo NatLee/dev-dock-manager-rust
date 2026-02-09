@@ -2,19 +2,23 @@
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import type { Container } from "@/types/api";
+import type { Container, Image } from "@/types/api";
 import { useContainers } from "@/hooks/useContainers";
+import { useImages } from "@/hooks/useImages";
 import { useNotificationsWs } from "@/hooks/useNotificationsWs";
+import { ImagesSection } from "@/components/containers/ImagesSection";
 import { ContainerTable } from "@/components/containers/ContainerTable";
 import { ContainerDetailsModal } from "@/components/containers/ContainerDetailsModal";
-import { ImagesSection } from "@/components/containers/ImagesSection";
+import { ImageDetailsModal } from "@/components/containers/ImageDetailsModal";
 import { NewContainerModal } from "@/components/containers/NewContainerModal";
 
 export default function ContainersPage() {
-  const { containers, loading, error, refetch, control } = useContainers();
+  const { containers, loading: containersLoading, error: containersError, refetch: refetchContainers, control } = useContainers();
+  const { images, loading: imagesLoading, error: imagesError, refetch: refetchImages } = useImages();
   const [waitingIds, setWaitingIds] = useState<Set<string>>(new Set());
   const [newModalOpen, setNewModalOpen] = useState(false);
   const [detailsContainer, setDetailsContainer] = useState<Container | null>(null);
+  const [detailsImage, setDetailsImage] = useState<Image | null>(null);
 
   const onWaiting = useCallback((containerId: string) => {
     setWaitingIds((prev) => new Set(prev).add(containerId));
@@ -24,7 +28,7 @@ export default function ContainersPage() {
     setWaitingIds(new Set());
   }, []);
 
-  const { connected: wsConnected } = useNotificationsWs(refetch, onWaiting, onDone);
+  const { connected: wsConnected } = useNotificationsWs(refetchContainers, onWaiting, onDone);
 
   const handleControl = useCallback(
     async (id: string, cmd: "start" | "stop" | "restart" | "remove") => {
@@ -43,13 +47,21 @@ export default function ContainersPage() {
     [control]
   );
 
+  const handleRefetch = useCallback(() => {
+    refetchContainers();
+    refetchImages();
+  }, [refetchContainers, refetchImages]);
+
+  const loading = containersLoading || imagesLoading;
+  const error = containersError ?? imagesError;
+
   return (
     <div className="mx-5">
-      <ImagesSection />
+      <ImagesSection
+        onImageClick={setDetailsImage}
+      />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-semibold text-text">
-          Containers
-        </h2>
+        <h2 className="text-2xl font-semibold text-text">Containers</h2>
         <div className="flex items-center gap-2">
           <span
             className="flex items-center gap-1.5 rounded-lg border border-border bg-surface/50 px-2.5 py-1.5 text-sm text-text-muted"
@@ -64,14 +76,14 @@ export default function ContainersPage() {
           <button
             type="button"
             onClick={() => setNewModalOpen(true)}
-            className="rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            className="rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
           >
             +
           </button>
           <button
             type="button"
-            onClick={() => refetch()}
-            className="rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+            onClick={handleRefetch}
+            className="rounded-xl bg-primary px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
           >
             ↻
           </button>
@@ -84,39 +96,38 @@ export default function ContainersPage() {
         <div className="rounded-xl border border-border bg-surface/30 px-4 py-8 text-center text-sm text-text-muted">
           Loading containers…
         </div>
+      ) : containers.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-surface/50 py-16 px-6 text-center">
+          <p className="mb-1 text-lg font-medium text-text">No containers yet</p>
+          <p className="mb-4 text-sm text-text-muted">
+            Click the button below to create your first dev environment container.
+          </p>
+          <button
+            type="button"
+            onClick={() => setNewModalOpen(true)}
+            className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
+          >
+            Create container
+          </button>
+        </div>
       ) : (
-        containers.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-surface/50 py-16 px-6 text-center">
-            <p className="mb-1 text-lg font-medium text-text">No containers yet</p>
-            <p className="mb-4 text-sm text-text-muted">
-              Click the button below to create your first dev environment container.
-            </p>
-            <button
-              type="button"
-              onClick={() => setNewModalOpen(true)}
-              className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-            >
-              Create container
-            </button>
-          </div>
-        ) : (
-          <ContainerTable
-            containers={containers}
-            onControl={handleControl}
-            waitingIds={waitingIds}
-            onContainerClick={setDetailsContainer}
-          />
-        )
+        <ContainerTable
+          containers={containers}
+          onControl={handleControl}
+          waitingIds={waitingIds}
+          onContainerClick={setDetailsContainer}
+        />
       )}
-      <ContainerDetailsModal
-        container={detailsContainer}
-        onClose={() => setDetailsContainer(null)}
+      <ContainerDetailsModal container={detailsContainer} onClose={() => setDetailsContainer(null)} />
+      <ImageDetailsModal
+        image={detailsImage}
+        onClose={() => setDetailsImage(null)}
+        onCreateClick={() => {
+          setDetailsImage(null);
+          setNewModalOpen(true);
+        }}
       />
-      <NewContainerModal
-        open={newModalOpen}
-        onClose={() => setNewModalOpen(false)}
-        onSuccess={refetch}
-      />
+      <NewContainerModal open={newModalOpen} onClose={() => setNewModalOpen(false)} onSuccess={handleRefetch} />
     </div>
   );
 }

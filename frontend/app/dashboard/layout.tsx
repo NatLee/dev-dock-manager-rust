@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { Navbar } from "@/components/layout/Navbar";
 import { Toaster } from "sonner";
@@ -12,8 +12,10 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { token, isReady, ensureAuth } = useAuth();
   const [checked, setChecked] = useState(false);
+  const isConsoleRoute = pathname?.startsWith("/dashboard/console") ?? false;
 
   useEffect(() => {
     if (!isReady) return;
@@ -36,7 +38,13 @@ export default function DashboardLayout({
   return (
     <>
       <Navbar />
-      <main className="container mx-auto mt-5 max-w-7xl bg-surface px-4 py-6">
+      <main
+        className={
+          isConsoleRoute
+            ? "flex h-[calc(100vh-3.5rem)] max-h-[calc(100vh-3.5rem)] flex-col overflow-hidden px-4 py-4"
+            : "container mx-auto mt-5 max-w-7xl bg-background px-4 py-6"
+        }
+      >
         <div id="toast-container" />
         {children}
       </main>

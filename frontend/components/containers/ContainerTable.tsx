@@ -17,7 +17,7 @@ export function ContainerTable({
   onContainerClick,
 }: Props) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-border bg-background shadow-sm">
+    <div className="overflow-x-auto rounded-xl border border-border bg-background-elevated shadow-sm">
       <table className="min-w-full divide-y divide-border">
         <thead className="border-b border-border bg-surface">
           <tr>
@@ -79,12 +79,12 @@ export function ContainerTable({
                 <td className="px-4 py-3">
                   <div className="flex gap-1">
                     {item.privileged && (
-                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                      <span className="rounded bg-accent-amber/15 px-1.5 py-0.5 text-xs font-medium text-accent-amber">
                         Privileged
                       </span>
                     )}
                     {item.nvdocker && (
-                      <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/40 dark:text-green-300">
+                      <span className="rounded bg-accent-green/15 px-1.5 py-0.5 text-xs font-medium text-accent-green">
                         NV-Docker
                       </span>
                     )}
@@ -92,7 +92,7 @@ export function ContainerTable({
                 </td>
                 <td className="px-4 py-3">
                   <span
-                    className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${item.status === "running" ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300" : "bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-200"}`}
+                    className={`inline-flex rounded px-2 py-0.5 text-xs font-medium ${item.status === "running" ? "bg-accent-green/15 text-accent-green" : "bg-surface text-text-muted"}`}
                   >
                     {item.status}
                   </span>

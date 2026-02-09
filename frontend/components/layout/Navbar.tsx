@@ -19,7 +19,7 @@ export function Navbar() {
       <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link
           href="/dashboard/containers"
-          className="flex items-center gap-2 text-white no-underline"
+          className="flex items-center gap-2 text-text no-underline hover:text-primary"
         >
           <span className="text-lg font-semibold tracking-tight">
             Dev Dock Manager
@@ -33,18 +33,18 @@ export function Navbar() {
               href={href}
               className={`rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                 pathname === href
-                  ? "bg-white/15 text-white"
-                  : "text-slate-300 hover:bg-white/10 hover:text-white"
+                  ? "bg-primary/15 text-primary"
+                  : "text-text-muted hover:bg-border/50 hover:text-primary"
               }`}
             >
               {label}
             </Link>
           ))}
-          <div className="ml-2 h-4 w-px bg-slate-500" aria-hidden />
+          <div className="ml-2 h-4 w-px bg-border" aria-hidden />
           <button
             type="button"
             onClick={logout}
-            className="rounded-lg px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded-lg px-3 py-2 text-sm font-medium text-text-muted transition-colors hover:bg-border/50 hover:text-primary"
           >
             Logout
           </button>
@@ -52,7 +52,7 @@ export function Navbar() {
 
         <button
           type="button"
-          className="rounded-lg p-2 text-slate-300 hover:bg-white/10 hover:text-white sm:hidden"
+          className="rounded-lg p-2 text-text-muted transition-colors hover:bg-border/50 hover:text-primary sm:hidden"
           onClick={() => setOpen((o) => !o)}
           aria-label="Toggle menu"
           aria-expanded={open}
@@ -68,12 +68,12 @@ export function Navbar() {
       </div>
 
       {open && (
-        <div className="border-t border-slate-600 bg-surface-nav py-2 sm:hidden">
+        <div className="border-t border-border bg-surface-nav py-2 sm:hidden">
           {navLinks.map(({ href, label }) => (
             <Link
               key={href}
               href={href}
-              className="block px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/10"
+              className="block px-4 py-2.5 text-sm font-medium text-text transition-colors hover:bg-border/50 hover:text-primary"
               onClick={() => setOpen(false)}
             >
               {label}
@@ -81,7 +81,7 @@ export function Navbar() {
           ))}
           <button
             type="button"
-            className="block w-full px-4 py-2.5 text-left text-sm font-medium text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+            className="block w-full px-4 py-2.5 text-left text-sm font-medium text-text-muted transition-colors hover:bg-border/50 hover:text-primary"
             onClick={() => {
               setOpen(false);
               logout();

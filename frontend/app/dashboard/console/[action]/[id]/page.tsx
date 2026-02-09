@@ -21,7 +21,7 @@ export default function ConsolePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center rounded-xl border border-border bg-background shadow-sm">
+      <div className="flex min-h-[40vh] items-center justify-center rounded-xl border border-border bg-background-elevated">
         <p className="text-text-muted">Loading console...</p>
       </div>
     );
@@ -29,11 +29,11 @@ export default function ConsolePage() {
 
   if (error || !info) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 rounded-xl border border-border bg-background p-8 shadow-sm">
+      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 rounded-xl border border-border bg-background-elevated p-8">
         <p className="text-center text-text-muted">{error ?? "Container not found"}</p>
         <Link
           href="/dashboard/containers"
-          className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
+          className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-hover"
         >
           Back to Containers
         </Link>
@@ -44,11 +44,11 @@ export default function ConsolePage() {
   const act = action === "attach" ? "attach" : "shell";
 
   return (
-    <div className="flex h-screen flex-col bg-background p-4">
-      <nav className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 shadow-sm">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+      <nav className="flex flex-wrap items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 shadow-sm">
         <Link
           href="/dashboard/containers"
-          className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-border"
+          className="rounded-lg border border-border bg-background-elevated px-3 py-1.5 text-sm font-medium text-text transition-colors hover:bg-surface"
         >
           ← Back
         </Link>
@@ -66,7 +66,7 @@ export default function ConsolePage() {
           )}
         </span>
       </nav>
-      <div className="flex min-h-[200px] flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background shadow-sm">
+      <div className="flex min-h-[400px] flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background-elevated shadow-sm">
         <Terminal containerId={info.id} action={act} onError={handleError} />
       </div>
     </div>

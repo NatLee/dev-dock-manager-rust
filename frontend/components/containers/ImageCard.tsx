@@ -7,17 +7,17 @@ function formatSize(mb: number): string {
   return mb.toFixed(2) + " MB";
 }
 
-type Props = { image: Image };
+type Props = {
+  image: Image;
+  onClick?: () => void;
+};
 
-export function ImageCard({ image }: Props) {
+export function ImageCard({ image, onClick }: Props) {
   const tags = image.tags ?? (image.name ? [image.name] : []);
   const displayName = image.name ?? image.short_id;
 
-  return (
-    <div
-      className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-border py-3 last:border-b-0 last:pb-0 first:pt-0"
-      role="listitem"
-    >
+  const content = (
+    <>
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium text-text" title={displayName}>
           {displayName}
@@ -27,7 +27,7 @@ export function ImageCard({ image }: Props) {
             {tags.map((tag) => (
               <span
                 key={tag}
-                className="inline-flex items-center rounded bg-primary/10 px-2 py-0.5 font-mono text-xs text-primary dark:bg-primary/20 dark:text-primary"
+                className="inline-flex items-center rounded bg-primary/10 px-2 py-0.5 font-mono text-xs text-primary"
                 title={tag}
               >
                 {tag}
@@ -42,6 +42,28 @@ export function ImageCard({ image }: Props) {
           {image.short_id}
         </span>
       </div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-background-elevated px-4 py-3 text-left shadow-sm transition-colors hover:bg-surface hover:border-primary/30 focus:outline-none focus:ring-2 focus:ring-primary/20"
+        role="listitem"
+      >
+        {content}
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-border bg-background-elevated px-4 py-3"
+      role="listitem"
+    >
+      {content}
     </div>
   );
 }

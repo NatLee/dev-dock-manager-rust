@@ -155,23 +155,23 @@ export function Terminal({ containerId, action, onError }: TerminalProps) {
   }, [containerId, action, send, onError]);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b border-border bg-surface/80 px-3 py-1.5">
+      <div className="flex shrink-0 items-center justify-between border-b border-border bg-surface px-3 py-1.5">
         <span
           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
             status === "connected"
-              ? "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
+              ? "bg-accent-green/15 text-accent-green"
               : status === "connecting"
-                ? "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-                : "bg-slate-100 text-slate-700 dark:bg-slate-700/50 dark:text-slate-200"
+                ? "bg-accent-amber/15 text-accent-amber"
+                : "bg-border/80 text-text-muted"
           }`}
         >
           <span
             className={`h-1.5 w-1.5 rounded-full ${
               status === "connected"
-                ? "bg-green-500"
+                ? "bg-accent-green"
                 : status === "connecting"
-                  ? "animate-pulse bg-amber-500"
-                  : "bg-slate-500"
+                  ? "animate-pulse bg-accent-amber"
+                  : "bg-text-muted"
             }`}
           />
           {status}
@@ -179,7 +179,7 @@ export function Terminal({ containerId, action, onError }: TerminalProps) {
       </div>
       <div
         ref={containerRef}
-        className={`min-h-[200px] w-full flex-1 rounded-b-xl bg-zinc-900 p-2 transition-[filter,opacity] duration-300 ${
+        className={`min-h-[200px] w-full flex-1 p-2 transition-[filter,opacity] duration-300 ${
           status === "disconnected" ? "pointer-events-none opacity-60 grayscale" : ""
         }`}
       />
