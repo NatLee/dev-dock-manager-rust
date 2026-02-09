@@ -9,21 +9,28 @@ x-common-extra-hosts: &extra-hosts
     - "host.docker.internal:host-gateway"
 
 services:
+
+  # Rust API
   backend:
     <<: [*common-networks, *extra-hosts]
     build:
-      context: .
-      dockerfile: ./Dockerfile
-    image: d-gui-manager-web
-    container_name: d-gui-manager-web
-    entrypoint: /src/docker-entrypoint.sh
+      context: ./backend
+      dockerfile: Dockerfile
+    image: d-gui-manager-backend
+    container_name: d-gui-manager-backend
     environment:
+      - BIND_ADDR=0.0.0.0:8000
+      - DATABASE_URL=sqlite:///app/data/db.sqlite3
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=change-me-in-production
       - DOCKER_NETWORK=d-gui-network
       - DOCKER_IMAGE_NAME=gui-vnc
+      - HOST_FOR_PORT_CHECK=host.docker.internal
     volumes:
-      - ./src:/src # backend source code for hot reloading
-      - ./supervisord.conf:/etc/supervisor/conf.d/supervisord.conf:rw # supervisord config
-      - /var/run/docker.sock:/var/run/docker.sock:rw # to access the host docker daemon
+      - ./backend-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - redis
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.backend-api.rule=PathPrefix(`/api`)"
