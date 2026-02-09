@@ -8,6 +8,8 @@
 
 A small SaaS for managing Docker-based GUI dev environments: create containers, use a web terminal and NoVNC from one dashboard. Backend is a Rust API; frontend is a React/Next.js app. All run behind Traefik on a single machine.
 
+You can find Python/Django version [here](https://github.com/NatLee/dev-dock-manager).
+
 </div>
 
 ---
