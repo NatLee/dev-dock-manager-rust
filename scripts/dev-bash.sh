@@ -1,2 +1,3 @@
 #!/bin/bash
-docker exec -it d-gui-manager-web bash
+# Open a shell in the backend container
+docker exec -it d-gui-manager-backend bash

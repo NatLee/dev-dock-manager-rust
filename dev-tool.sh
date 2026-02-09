@@ -13,16 +13,19 @@ Options:
   -h, --help    Show this help
 
 Subcommands:
-  backend-debug     Stop supervisor django and run runserver 0.0.0.0:8000 for debugging
-  bash              Open a bash shell in the web container (d-gui-manager-web)
-  create-superuser  Create a Django superuser in the container (prompts for username/password; default: admin / 1234)
-  supervisorctl     Run supervisorctl inside the container to manage services
+  backend-debug     Run backend in foreground with RUST_LOG=debug (one-off container)
+  bash              Open a bash shell in the backend container (d-gui-manager-backend)
+  create-superuser  Create a user for login (default: admin / 1234; pass --email, --staff as extra args)
+  logs              Follow backend container logs
+  supervisorctl     Alias for logs (view backend logs; no supervisord in Rust backend)
 
 Examples:
   ./dev-tool.sh --help
   ./dev-tool.sh bash
   ./dev-tool.sh backend-debug
   ./dev-tool.sh create-superuser
+  ./dev-tool.sh create-superuser admin mypass --staff
+  ./dev-tool.sh logs
   ./dev-tool.sh supervisorctl
 EOF
 }
@@ -49,11 +52,14 @@ case "${1:-}" in
     run_script "bash" "${@:2}"
     ;;
   create-superuser)
-    echo "Create Django superuser (press Enter to use default)."
+    echo "Create backend user (press Enter to use default)."
     read -r -p "Username [admin]: " input_username
     read -r -s -p "Password [1234]: " input_password
     echo
-    run_script "create-superuser" "${input_username:-admin}" "${input_password:-1234}"
+    run_script "create-superuser" "${input_username:-admin}" "${input_password:-1234}" "${@:2}"
+    ;;
+  logs)
+    run_script "logs" "${@:2}"
     ;;
   supervisorctl)
     run_script "supervisorctl" "${@:2}"
