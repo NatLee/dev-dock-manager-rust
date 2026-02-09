@@ -18,7 +18,11 @@ export function Terminal({ containerId, action, onError }: TerminalProps) {
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState("connecting");
   const send = useCallback(
-    (msg: { action: string; payload: Record<string, unknown> }) => {
+    (msg: {
+      action: string;
+      payload: Record<string, unknown>;
+      token?: string;
+    }) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify(msg));
       }
@@ -41,16 +45,20 @@ export function Terminal({ containerId, action, onError }: TerminalProps) {
       onError?.("Not authenticated");
       return () => term.dispose();
     }
-    const url = getWsOrigin() + "/ws/console/";
-    const ws = new WebSocket(url, [
-      "token." + btoa(token),
-      "container." + containerId,
-    ]);
+    // 先連線（僅 container 在 query），第一則訊息再帶 token 驗證，避免 token 進 URL/log
+    const params = new URLSearchParams({ container: containerId });
+    const url = getWsOrigin() + "/ws/console/?" + params.toString();
+    const ws = new WebSocket(url);
     wsRef.current = ws;
     let initialResizeTimer: ReturnType<typeof setTimeout>;
     ws.onopen = () => {
       setStatus("connected");
-      send({ action, payload: { Id: containerId } });
+      // 第一則訊息須含 token，後端驗證通過後才處理 action
+      send({
+        token,
+        action,
+        payload: { Id: containerId },
+      });
       term.focus();
       // Defer fit until layout is ready to avoid FitAddon parsing/dimension errors
       requestAnimationFrame(() => {
@@ -74,7 +82,7 @@ export function Terminal({ containerId, action, onError }: TerminalProps) {
       term.options.cursorBlink = false;
       term.options.disableStdin = true;
       const msg =
-        event.code === 4001
+        event.code === 4001 || event.code === 1008
           ? "Unauthorized. Please log in again."
           : event.code === 4000
             ? "Invalid connection (missing or invalid token or container)."
