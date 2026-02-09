@@ -1,100 +1,106 @@
-<div align="center" style="text-align: center">
+<div align="center">
 
 # **Dev Dock Manager**
 
-<p style="text-align: center">
-  <img align="center" src="./doc/login.gif" alt="frame">
+<p>
+  <img src="./doc/login.gif" alt="Login">
 </p>
 
-This is a SAAS tool for managing docker containers with GUI developed using Django, providing isolated development environments with a suite of base functions and packages for each user on the same machine.
+A small SaaS for managing Docker-based GUI dev environments: create containers, use a web terminal and NoVNC from one dashboard. Backend is a Rust API; frontend is a React/Next.js app. All run behind Traefik on a single machine.
 
 </div>
 
-This project combines the following repositories:
-- [Dev Dock](https://github.com/NatLee/dev-dock)
-- [Django Docker GUI](https://github.com/NatLee/django-docker-gui)
+---
 
-## Contains
+## What’s in this repo
 
-- Traefik
-
-    This tool is used to proxy containers of multi-GUI NoVNC in the main port.
-
-- Django Dashboard
-
-    The dashboard of GUI container list is developed by using Django framework.
-
-- Nvidia Docker Checker
-
-    `docker-compose.yml` contains service of `nvidia-cuda` and it's used to check the host can run Nvidia docker or not.
-
-- NoVNC & SSH Support
+- **Traefik** – Reverse proxy for the app and for multi-instance NoVNC.
+- **Rust API** – Auth (JWT), containers, images, ports, console/WebSocket. Default port: `0.0.0.0:8000`.
+- **Frontend** – Dashboard (container list, create, web terminal, NoVNC).
+- **Redis** – Used by the backend (e.g. task queue).
+- **Nvidia Docker** – Optional; `docker-compose` includes an `nvidia-cuda` service to verify the host can run Nvidia Docker.
 
 ## Interface
 
-- Create container
+- **Create container**  
+  ![create](./doc/create.gif)
 
-    ![create](./doc/create.gif)
+- **Web terminal**  
+  ![web terminal](./doc/console.gif)
 
-- Web Terminal
+- **NoVNC**  
+  ![novnc](./doc/novnc.gif)
 
-    ![web terminal](./doc/console.gif)
+## Nvidia Docker support
 
-- NoVNC
+Optional. Needs Nvidia drivers and Nvidia Docker runtime on the host. If available, you can enable GPU when creating a container.
 
-    ![novnc](./doc/novnc.gif)
+---
 
-## Nvidia Docker Support
+## Usage
 
-Nvidia Docker support is available under certain conditions.
+- **Platform**: Linux (Docker socket). On Windows, use Docker inside WSL.
+- **Submodule**: Clone the GUI container image from [dev-dock](https://github.com/NatLee/dev-dock) first:
 
-Ensure your system has Nvidia drivers installed and the Nvidia Docker runtime is set up correctly.
-
-This feature is optional and can be enabled during container creation if your system meets the requirements.
-
-# Usage
-
-> Only support Linux-based machine because it uses Docker socket to interact with Docker daemon.
-
-> In Windows, you need to use Docker in WSL.
-
-Notice that you need to clone the submodule at the first. The submodule is the GUI container image from [dev-dock](https://github.com/NatLee/dev-dock).
-
-```
+```bash
 git submodule update --init --recursive
 ```
 
-## Quick start
+### Quick start
 
-> Docker daemon must be running.
+1. **Create network and start stack** (Docker daemon must be running):
 
-1. Build GUI container.
-
-> Or you can pull from Docker Hub with [natlee/gui-vnc](https://hub.docker.com/r/natlee/gui-vnc).
-
-```
-cd gui && docker-compose build
-```
-
-2. Back to the root of this repo and use command to start the web service.
-
-```
+```bash
 docker network create d-gui-network
-docker-compose build && docker-compose up -d
+docker compose build && docker compose up -d
 ```
 
-3. Create a superuser for Django admin.
+2. **Build GUI image** (or pull [natlee/gui-vnc](https://hub.docker.com/r/natlee/gui-vnc)):
 
-> Check the script `./dev-create-superuser.sh` and change the username and password if you want.
-
-```
-bash dev-create-superuser.sh
+```bash
+cd gui && docker-compose build && cd ..
 ```
 
-4. Go to http://localhost:8000/dashboard, it will show the login page.
+3. **Create the first user** (for login):
 
+```bash
+./dev-tool.sh create-superuser
+```
 
-# License
+Defaults: username `admin`, password `1234`. To pass options (e.g. `--staff`, `--email`), run the script with args or use:
+
+```bash
+docker exec -it d-gui-manager-backend /app/dev-dock-manager-api create-user admin mypassword --staff
+```
+
+4. Open **http://localhost:8000/dashboard** and log in.
+
+### Dev helper script
+
+From the project root:
+
+```bash
+./dev-tool.sh --help
+```
+
+- `bash` – Shell in the backend container (`d-gui-manager-backend`).
+- `create-superuser` – Create a login user (Rust `create-user`).
+- `logs` – Follow backend logs.
+- `backend-debug` – Run backend in a one-off container with `RUST_LOG=debug`.
+
+---
+
+## API (backend)
+
+- **Health**: `GET http://localhost:8000/health` → `ok`
+- **Prefix**: `/api` (e.g. `/api/auth/token`, `/api/containers`, `/api/ports`).
+
+**Web terminal / Console**: Frontend calls `GET /api/console/:action/:id` for metadata, then connects to WebSocket `/ws/console` with subprotocol `token.<base64_jwt>, container.<container_id>`. Messages: `shell`, `attach`, `pty_input`, `pty_resize`.
+
+**Backend layout** (high level): `backend/src/api/` (auth, containers, images, ports), `backend/src/ws/` (console & notifications), `backend/src/docker/` (bollard), `backend/src/queue/`, `backend/src/db/` (users, SQLite + Argon2).
+
+---
+
+## License
 
 [MIT](./LICENSE)
-
