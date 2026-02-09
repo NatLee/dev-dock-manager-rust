@@ -3,7 +3,7 @@
 # **Dev Dock Manager**
 
 <p>
-  <img src="./doc/login.gif" alt="Login">
+  <img src="./doc/workflow.gif" alt="Login">
 </p>
 
 A small SaaS for managing Docker-based GUI dev environments: create containers, use a web terminal and NoVNC from one dashboard. Backend is a Rust API; frontend is a React/Next.js app. All run behind Traefik on a single machine.
@@ -23,6 +23,9 @@ You can find Python/Django version [here](https://github.com/NatLee/dev-dock-man
 - **Nvidia Docker** – Optional; `docker-compose` includes an `nvidia-cuda` service to verify the host can run Nvidia Docker.
 
 ## Interface
+
+- **Login**
+  ![login](./doc/login.gif)
 
 - **Create container**  
   ![create](./doc/create.gif)
