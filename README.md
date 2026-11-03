@@ -36,24 +36,27 @@ version has a Rust API (axum + bollard) and a Next.js frontend, all behind Traef
 Both managers have the same dashboard, the same routes, the same permission rules and the same account
 pages, and start the same containers. Pick one per machine. This one is the recommended choice: one small
 binary instead of Django + Daphne + an RQ worker under supervisord. In the measurements below it uses
-about a fiftieth of the memory, starts in about half a second instead of eight, and answers the dashboard's
-calls 2 to 15 times faster.
+about a thirtieth of the memory, starts about six times faster, and answers most of the dashboard's calls
+4 to 6 times faster. The two list calls mostly wait for Docker, so there the gap is smaller (1.2 to 1.6 times).
 
 | Measured (median) | dev-dock-manager-rust | dev-dock-manager (Django) |
 |---|---|---|
 | Backend image size | **144 MB** | 687 MB |
-| Backend memory when idle | **5.0 MiB** | 256 MiB |
-| Start-up (`docker start` → API answers) | **0.58 s** | 8.3 s |
-| Log in (`POST /api/auth/token`) | **18 ms** | 129 ms |
-| Who am I (`GET /dashboard/api/me`) | **3.0 ms** | 13.8 ms |
-| Container list (`GET /dashboard/api/containers`) | **478 ms** | 3,185 ms |
-| Image list (`GET /dashboard/api/images`) | **324 ms** | 4,973 ms |
-| Terminal metadata (`GET /dashboard/api/console/shell/<id>`) | **14 ms** | 27 ms |
+| Backend memory when idle | **5.5 MiB** | 175 MiB |
+| Start-up (`docker start` → API answers) | **3.0 s** | 18.6 s |
+| Log in (`POST /api/auth/token`) | **44 ms** | 223 ms |
+| Who am I (`GET /dashboard/api/me`) | **6.4 ms** | 40 ms |
+| Container list (`GET /dashboard/api/containers`) | **485 ms** | 593 ms |
+| Image list (`GET /dashboard/api/images`) | **143 ms** | 224 ms |
+| Terminal metadata (`GET /dashboard/api/console/shell/<id>`) | **17 ms** | 78 ms |
 
 How it was measured (2026-11-04):
-- **Setup.** Both stacks were built from `main` and run one after the other on the same machine: 32 cores,
-  32 GB RAM, Docker Desktop 29.8.1 on x86_64, Traefik v3.7, Redis, one running desktop. The repo's own
-  compose file was used, with only names and ports changed.
+- **Setup.** Both stacks were run one after the other on the same machine, within an hour: 32 cores,
+  32 GB RAM, Docker Desktop 29.8.1 on x86_64, Traefik v3.7, Redis, and one running desktop (a stand-in
+  container under the desktop image's name). The repo's own compose file was used, with only names and
+  ports changed. Django ran on Daphne with its faster list calls, Rust with the same list changes. The
+  machine was busy with other work (about 40 other containers and 135 images), so every number is higher
+  than on an idle machine; compare the two columns with each other.
 - **Image size** is what `docker image inspect` reports for the backend image. Both frontend images are the
   same Next.js build, 295 MB each.
 - **Memory** is the backend container in `docker stats`, after a minute with no requests (3 readings).
@@ -61,10 +64,9 @@ How it was measured (2026-11-04):
   `/api/auth/token` answered through Traefik.
 - **Response times** come from 30 sequential requests per endpoint through Traefik, after 3 warm-up
   requests, all with status 200.
-- **What it doesn't cover:** this is not a load test. The list endpoints depend on how much else runs on the
-  Docker host (this one had about 90 unrelated images). Django is slower there mostly because docker-py
-  inspects every image one by one and the container list also asks Docker for disk usage. Log-in time is
-  mostly password hashing (Argon2 here, Django's PBKDF2 there).
+- **What it doesn't cover:** this is not a load test. Both list calls make one list request to Docker, then
+  inspect only the desktops the user may see, so they depend on how much else runs on the Docker host. Log-in
+  time is mostly password hashing (Argon2 here, Django's PBKDF2 there).
 
 Other differences:
 
