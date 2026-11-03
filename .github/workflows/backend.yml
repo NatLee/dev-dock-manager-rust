@@ -18,9 +18,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: backend
-      # No Cargo.lock in the repo (it is git-ignored), so this resolves the newest
-      # compatible versions, the same way the Dockerfile does.
-      - run: cargo test
+      # Same dependency versions as the Dockerfile builds: both use the committed Cargo.lock.
+      - run: cargo test --locked
 
   docker-stop:
     # The API runs as PID 1 in its image. Make sure `docker stop` (SIGTERM) shuts it

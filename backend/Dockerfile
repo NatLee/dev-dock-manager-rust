@@ -3,12 +3,12 @@ FROM rust:1-bookworm AS builder
 WORKDIR /app
 
 # Copy manifests and source
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY migrations ./migrations
 
 # Build release binary (cache layers by copying dummy main if needed)
-RUN cargo build --release
+RUN cargo build --release --locked
 
 # Runtime stage
 FROM debian:bookworm-slim
