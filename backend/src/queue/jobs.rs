@@ -1,8 +1,9 @@
 //! 佇列 worker：以 BRPOP 取任務，依類型呼叫 bollard（建立/啟動/停止/刪除/重啟容器），
-//! 完成後透過 broadcast 發送通知給 WebSocket 客戶端。
+//! 完成後把結果當成通知（帶著容器主人）廣播給 WebSocket。
 
-use super::{EnqueuedJob, Job, QUEUE_KEY};
-use bollard::models::{ContainerCreateBody, HostConfig, PortBinding};
+use super::{EnqueuedJob, Job, NewContainer, Notification, QUEUE_KEY};
+use crate::docker::{gui_container_labels, GUI_NOVNC_PORT, GUI_SSH_PORT};
+use bollard::models::{ContainerCreateBody, DeviceRequest, HostConfig, PortBinding};
 use bollard::query_parameters::{
     CreateContainerOptions, RemoveContainerOptions, StopContainerOptions,
 };
@@ -16,8 +17,7 @@ use std::time::Duration;
 /// 但已經開始執行的 job 會做完，避免容器建到一半。
 pub async fn run_worker(
     redis_url: String,
-    docker_network: String,
-    notify_tx: tokio::sync::broadcast::Sender<String>,
+    notify_tx: tokio::sync::broadcast::Sender<Notification>,
     mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     let docker = match crate::docker::connect() {
@@ -71,52 +71,21 @@ pub async fn run_worker(
                 continue;
             }
         };
-        let task_id = enqueued.task_id;
-        match run_job(&docker, &docker_network, enqueued.job).await {
+        match run_job(&docker, enqueued.job).await {
             Ok((action, details)) => {
-                let msg =
-                    serde_json::json!({ "message": { "action": action, "details": details } });
-                let _ = notify_tx.send(msg.to_string());
+                let _ = notify_tx.send(Notification::new(enqueued.owner_id, action, &details, None));
             }
             Err(e) => {
-                tracing::error!("Worker: job {} failed: {}", task_id, e);
+                tracing::error!("Worker: job {} failed: {}", enqueued.task_id, e);
             }
         }
     }
     tracing::info!("Worker: stopped");
 }
 
-async fn run_job(
-    docker: &Docker,
-    _docker_network: &str,
-    job: Job,
-) -> Result<(String, String), String> {
+async fn run_job(docker: &Docker, job: Job) -> Result<(&'static str, String), String> {
     match job {
-        Job::RunImage {
-            image_name,
-            ssh_port,
-            name,
-            user,
-            password,
-            vnc_password,
-            root_password,
-            privileged,
-            nvdocker,
-            docker_network: net,
-        } => run_image(
-            docker,
-            &net,
-            &image_name,
-            ssh_port,
-            &name,
-            &user,
-            &password,
-            &vnc_password,
-            &root_password,
-            privileged,
-            nvdocker,
-        )
-        .await,
+        Job::RunImage(spec) => run_image(docker, &spec).await,
         Job::StartContainer { id } => run_start(docker, &id).await,
         Job::StopContainer { id } => run_stop(docker, &id).await,
         Job::RemoveContainer { id } => run_remove(docker, &id).await,
@@ -124,168 +93,94 @@ async fn run_job(
     }
 }
 
-async fn run_image(
-    docker: &Docker,
-    docker_network: &str,
-    image_name: &str,
-    ssh_port: u16,
-    name: &str,
-    user: &str,
-    password: &str,
-    vnc_password: &str,
-    root_password: &str,
-    privileged: bool,
-    nvdocker: bool,
-) -> Result<(String, String), String> {
-    let mut port_bindings = HashMap::new();
-    port_bindings.insert(
-        "22/tcp".to_string(),
+/// 建立並啟動一個 GUI 容器：只公開 SSH，noVNC 交給 Traefik（label），直接接在管理介面的網路上。
+async fn run_image(docker: &Docker, spec: &NewContainer) -> Result<(&'static str, String), String> {
+    let port_bindings = HashMap::from([(
+        format!("{GUI_SSH_PORT}/tcp"),
         Some(vec![PortBinding {
             host_ip: None,
-            host_port: Some(ssh_port.to_string()),
+            host_port: Some(spec.ssh_port.to_string()),
         }]),
-    );
-    let mut binds = Vec::new();
-    if crate::docker::is_linux() {
-        binds.push("/etc/localtime:/etc/localtime:ro".to_string());
-    }
-    let mut labels = HashMap::new();
-    labels.insert("traefik.enable".to_string(), "true".to_string());
-    labels.insert(
-        format!("traefik.http.routers.d-gui-{}.rule", name),
-        format!("PathPrefix(`/novnc/{}/`)", name),
-    );
-    labels.insert(
-        format!("traefik.http.services.d-gui-{}.loadbalancer.server.port", name),
-        "6901".to_string(),
-    );
-    labels.insert(
-        format!(
-            "traefik.http.middlewares.d-gui-{}-strip-prefix.stripprefix.prefixes",
-            name
-        ),
-        format!("/novnc/{}/", name),
-    );
-    labels.insert(
-        format!("traefik.http.routers.d-gui-{}.middlewares", name),
-        format!("d-gui-{}-strip-prefix", name),
-    );
-    labels.insert("traefik.docker.network".to_string(), docker_network.to_string());
-
-    let mut device_requests = Vec::new();
-    if nvdocker {
-        device_requests.push(bollard::models::DeviceRequest {
+    )]);
+    let binds = crate::docker::is_linux().then(|| vec!["/etc/localtime:/etc/localtime:ro".to_string()]);
+    let device_requests = spec.nvdocker.then(|| {
+        vec![DeviceRequest {
             driver: Some("nvidia".to_string()),
             count: Some(-1),
-            device_ids: None,
             capabilities: Some(vec![vec!["gpu".to_string()]]),
-            options: None,
-        });
-    }
-
+            ..Default::default()
+        }]
+    });
+    // 解析度等其他設定用映像自己的預設值。
     let env = vec![
-        format!("VNC_PW={}", vnc_password),
-        "VNC_RESOLUTION=1600x900".to_string(),
-        format!("DEFAULT_USER={}", user),
-        format!("DEFAULT_USER_PASSWORD={}", password),
-        format!("ROOT_PASSWORD={}", root_password),
+        format!("VNC_PW={}", spec.vnc_password),
+        format!("DEFAULT_USER={}", spec.user),
+        format!("DEFAULT_USER_PASSWORD={}", spec.password),
+        format!("ROOT_PASSWORD={}", spec.root_password),
     ];
-
-    let host_config = HostConfig {
-        port_bindings: Some(port_bindings),
-        binds: if binds.is_empty() {
-            None
-        } else {
-            Some(binds)
-        },
-        privileged: Some(privileged),
-        device_requests: if device_requests.is_empty() {
-            None
-        } else {
-            Some(device_requests)
-        },
-        ..Default::default()
-    };
-
     let config = ContainerCreateBody {
-        image: Some(image_name.to_string()),
-        host_config: Some(host_config),
+        image: Some(spec.image_name.clone()),
         env: Some(env),
-        labels: Some(labels),
+        labels: Some(gui_container_labels(&spec.name, &spec.docker_network, GUI_NOVNC_PORT, spec.owner_id)),
+        host_config: Some(HostConfig {
+            port_bindings: Some(port_bindings),
+            binds,
+            privileged: Some(spec.privileged),
+            device_requests,
+            network_mode: Some(spec.docker_network.clone()),
+            ..Default::default()
+        }),
         ..Default::default()
     };
-
     let opts = CreateContainerOptions {
-        name: Some(name.to_string()),
+        name: Some(spec.name.clone()),
         ..Default::default()
     };
     let create = docker
         .create_container(Some(opts), config)
         .await
         .map_err(|e| e.to_string())?;
-    let id = create.id.as_str();
     docker
-        .start_container(id, None)
+        .start_container(&create.id, None)
         .await
         .map_err(|e| e.to_string())?;
-
-    // Connect container to network (bollard 0.20: NetworkConnectRequest in models)
-    let connect_body = bollard::models::NetworkConnectRequest {
-        container: id.to_string(),
-        endpoint_config: None,
-    };
-    if let Err(e) = docker
-        .connect_network(docker_network, connect_body)
-        .await
-    {
-        tracing::warn!(
-            "Container [{}] created but connect to network {} failed: {}",
-            name,
-            docker_network,
-            e
-        );
-    }
-
-    let msg = format!("Container [{}] ({}) has been created", name, image_name);
-    Ok(("CREATED".to_string(), msg))
+    Ok((
+        "CREATED",
+        format!("Container [{}] ({}) has been created", spec.name, spec.image_name),
+    ))
 }
 
-async fn run_start(docker: &Docker, id: &str) -> Result<(String, String), String> {
-    docker
-        .start_container(id, None)
-        .await
-        .map_err(|e| e.to_string())?;
+async fn container_name(docker: &Docker, id: &str) -> Result<String, String> {
     let inspect = docker.inspect_container(id, None).await.map_err(|e| e.to_string())?;
-    let name = inspect.name.as_deref().unwrap_or(id).trim_start_matches('/');
-    Ok(("STARTED".to_string(), format!("Container [{}] has been started", name)))
+    Ok(inspect.name.as_deref().unwrap_or(id).trim_start_matches('/').to_string())
 }
 
-async fn run_stop(docker: &Docker, id: &str) -> Result<(String, String), String> {
+async fn run_start(docker: &Docker, id: &str) -> Result<(&'static str, String), String> {
+    docker.start_container(id, None).await.map_err(|e| e.to_string())?;
+    let name = container_name(docker, id).await?;
+    Ok(("STARTED", format!("Container [{}] has been started", name)))
+}
+
+async fn run_stop(docker: &Docker, id: &str) -> Result<(&'static str, String), String> {
     docker
         .stop_container(id, None::<StopContainerOptions>)
         .await
         .map_err(|e| e.to_string())?;
-    let inspect = docker.inspect_container(id, None).await.map_err(|e| e.to_string())?;
-    let name = inspect.name.as_deref().unwrap_or(id).trim_start_matches('/');
-    Ok(("STOPPED".to_string(), format!("Container [{}] has been stopped", name)))
+    let name = container_name(docker, id).await?;
+    Ok(("STOPPED", format!("Container [{}] has been stopped", name)))
 }
 
-async fn run_remove(docker: &Docker, id: &str) -> Result<(String, String), String> {
-    let inspect = docker.inspect_container(id, None).await.map_err(|e| e.to_string())?;
-    let name = inspect.name.as_deref().unwrap_or(id).trim_start_matches('/').to_string();
+async fn run_remove(docker: &Docker, id: &str) -> Result<(&'static str, String), String> {
+    let name = container_name(docker, id).await?;
     docker
         .remove_container(id, None::<RemoveContainerOptions>)
         .await
         .map_err(|e| e.to_string())?;
-    Ok(("REMOVED".to_string(), format!("Container [{}] has been removed", name)))
+    Ok(("REMOVED", format!("Container [{}] has been removed", name)))
 }
 
-async fn run_restart(docker: &Docker, id: &str) -> Result<(String, String), String> {
-    docker
-        .restart_container(id, None)
-        .await
-        .map_err(|e| e.to_string())?;
-    let inspect = docker.inspect_container(id, None).await.map_err(|e| e.to_string())?;
-    let name = inspect.name.as_deref().unwrap_or(id).trim_start_matches('/');
-    Ok(("RESTARTED".to_string(), format!("Container [{}] has been restarted", name)))
+async fn run_restart(docker: &Docker, id: &str) -> Result<(&'static str, String), String> {
+    docker.restart_container(id, None).await.map_err(|e| e.to_string())?;
+    let name = container_name(docker, id).await?;
+    Ok(("RESTARTED", format!("Container [{}] has been restarted", name)))
 }

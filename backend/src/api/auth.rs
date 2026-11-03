@@ -58,8 +58,9 @@ async fn token(
             Json(serde_json::json!({ "detail": "Invalid credentials." })),
         )
     })?;
-    if !verify_password(&row.password_hash, &body.password) {
-        tracing::info!("auth/token: password mismatch username={:?}", body.username);
+    // 停用的帳號和密碼錯誤回一樣的訊息，不透露帳號狀態。
+    if row.is_active == 0 || !verify_password(&row.password_hash, &body.password) {
+        tracing::info!("auth/token: rejected username={:?} (wrong password or disabled)", body.username);
         return Err((
             axum::http::StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "detail": "Invalid credentials." })),
@@ -90,6 +91,14 @@ async fn refresh(
 ) -> Result<Json<RefreshResponse>, (axum::http::StatusCode, &'static str)> {
     let claims = crate::jwt::verify_refresh(&body.refresh_token, state.config.jwt_secret.as_bytes())
         .map_err(|_| (axum::http::StatusCode::UNAUTHORIZED, "invalid refresh token"))?;
+    // 停用或刪除的帳號不能再換新的 access token。
+    let still_active = crate::db::get_by_id(&state.pool, claims.user_id)
+        .await
+        .map_err(|_| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "db error"))?
+        .is_some_and(|u| u.is_active);
+    if !still_active {
+        return Err((axum::http::StatusCode::UNAUTHORIZED, "invalid refresh token"));
+    }
     let (access, _) = crate::jwt::issue_tokens(
         claims.user_id,
         &claims.sub,
@@ -113,7 +122,8 @@ async fn verify(
             Json(serde_json::json!({ "detail": "token required" })),
         )
     })?;
-    crate::jwt::verify_access(&token, state.config.jwt_secret.as_bytes()).map_err(|_| {
+    // 和其他 API 同一套檢查：token 有效，而且帳號還在、沒被停用。
+    crate::auth_extractor::authenticate(&state, &token).await.map_err(|_| {
         (
             axum::http::StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "detail": "Token is invalid or expired" })),

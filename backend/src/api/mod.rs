@@ -1,10 +1,11 @@
-//! REST API 路由彙總：auth（JWT）、containers、images、ports。
+//! REST API 路由彙總：auth（JWT）、users（帳號管理）、containers、images、ports。
 //! 僅 JWT 登入，無 Google 等第三方登入路由。
 
 mod auth;
-mod containers;
+pub mod containers;
 mod images;
 mod ports;
+mod users;
 
 use axum::Router;
 
@@ -17,4 +18,5 @@ pub fn router() -> Router<AppState> {
         .merge(containers::router())
         .merge(images::router())
         .merge(ports::router())
+        .merge(users::router())
 }

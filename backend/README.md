@@ -16,4 +16,4 @@ cargo run -- create-user myuser mypassword
 cargo run -- create-user admin admin123 --email admin@example.com --staff
 ```
 
-Requires Rust 1.75+. Optional: `.env` with `BIND_ADDR`, `DATABASE_URL`, `REDIS_URL`, `JWT_SECRET`, `DOCKER_NETWORK`.
+Requires Rust 1.75+. `JWT_SECRET` must be set (env or `.env`); optional: `BIND_ADDR`, `DATABASE_URL`, `REDIS_URL`, `DOCKER_NETWORK`, `DOCKER_IMAGE_NAME`.

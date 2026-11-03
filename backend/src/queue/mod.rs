@@ -1,5 +1,6 @@
-//! 背景任務佇列（Redis LPUSH/BRPOP）與通知廣播。
-//! API 將「建立容器」等操作寫入佇列，worker 取出後執行 bollard 並透過 broadcast 通知 WebSocket 客戶端。
+//! 背景任務佇列（Redis LPUSH/BRPOP）與通知。
+//! API 將「建立容器」等操作寫入佇列，worker 取出後執行 bollard，並把結果當成通知廣播給 WebSocket；
+//! 每則通知帶著容器主人，WebSocket 只轉給主人和管理員。
 
 mod jobs;
 
@@ -8,33 +9,75 @@ use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const QUEUE_KEY: &str = "dev_dock_manager:queue";
-const NOTIFY_CHANNEL: &str = "dev_dock_manager:notifications";
 
-/// 單一任務種類：建立映像容器、啟動/停止/刪除/重啟容器。
+/// 建立一個 GUI 容器需要的全部資料。
+#[derive(Clone, Serialize, Deserialize)]
+pub struct NewContainer {
+    pub image_name: String,
+    pub name: String,
+    pub ssh_port: u16,
+    pub user: String,
+    pub password: String,
+    pub vnc_password: String,
+    pub root_password: String,
+    pub privileged: bool,
+    pub nvdocker: bool,
+    pub docker_network: String,
+    /// 建立者的使用者 id，寫進容器的 owner label。
+    pub owner_id: i64,
+}
+
+/// 單一任務種類：建立容器、啟動/停止/刪除/重啟容器。
 #[derive(Clone, Serialize, Deserialize)]
 pub enum Job {
-    RunImage {
-        image_name: String,
-        ssh_port: u16,
-        name: String,
-        user: String,
-        password: String,
-        vnc_password: String,
-        root_password: String,
-        privileged: bool,
-        nvdocker: bool,
-        docker_network: String,
-    },
+    RunImage(NewContainer),
     StartContainer { id: String },
     StopContainer { id: String },
     RemoveContainer { id: String },
     RestartContainer { id: String },
 }
 
+impl Job {
+    /// 從儀表板的指令（start/stop/restart/remove）建立對應的任務。
+    pub fn control(cmd: &str, id: &str) -> Option<Self> {
+        let id = id.to_string();
+        match cmd {
+            "start" => Some(Job::StartContainer { id }),
+            "stop" => Some(Job::StopContainer { id }),
+            "remove" => Some(Job::RemoveContainer { id }),
+            "restart" => Some(Job::RestartContainer { id }),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct EnqueuedJob {
     pub task_id: String,
+    /// 任務所屬容器的主人，用來決定結果通知要送給誰。
+    #[serde(default)]
+    pub owner_id: Option<i64>,
     pub job: Job,
+}
+
+/// 一則給儀表板的通知：`{"message": {"action", "details", "data"?}}`，加上容器主人。
+#[derive(Clone, Debug)]
+pub struct Notification {
+    pub owner_id: Option<i64>,
+    pub payload: String,
+}
+
+impl Notification {
+    pub fn new(owner_id: Option<i64>, action: &str, details: &str, data: Option<serde_json::Value>) -> Self {
+        let mut message = serde_json::json!({ "action": action, "details": details });
+        if let Some(data) = data {
+            message["data"] = data;
+        }
+        Notification {
+            owner_id,
+            payload: serde_json::json!({ "message": message }).to_string(),
+        }
+    }
 }
 
 fn new_task_id() -> String {
@@ -47,40 +90,17 @@ fn new_task_id() -> String {
     )
 }
 
-/// 將「建立並執行映像容器」任務寫入 Redis 佇列；回傳 task_id 供前端輪詢/通知。
-pub async fn enqueue_run_image(
-    redis_url: &str,
-    docker_network: &str,
-    image_name: &str,
-    ssh_port: u16,
-    name: &str,
-    user: &str,
-    password: &str,
-    vnc_password: &str,
-    root_password: &str,
-    privileged: bool,
-    nvdocker: bool,
-) -> Result<String, String> {
+/// 把任務寫入 Redis 佇列；回傳 task_id 供前端對照。
+pub async fn enqueue(redis_url: &str, owner_id: Option<i64>, job: Job) -> Result<String, String> {
     let client = redis::Client::open(redis_url).map_err(|e| e.to_string())?;
     let mut conn = client
         .get_multiplexed_async_connection()
         .await
         .map_err(|e| e.to_string())?;
     let task_id = new_task_id();
-    let job = Job::RunImage {
-        image_name: image_name.to_string(),
-        ssh_port,
-        name: name.to_string(),
-        user: user.to_string(),
-        password: password.to_string(),
-        vnc_password: vnc_password.to_string(),
-        root_password: root_password.to_string(),
-        privileged,
-        nvdocker,
-        docker_network: docker_network.to_string(),
-    };
     let payload = serde_json::to_string(&EnqueuedJob {
         task_id: task_id.clone(),
+        owner_id,
         job,
     })
     .map_err(|e| e.to_string())?;
@@ -88,57 +108,6 @@ pub async fn enqueue_run_image(
         .await
         .map_err(|e| e.to_string())?;
     Ok(task_id)
-}
-
-/// 向 Redis NOTIFY_CHANNEL 發送 WAITING 通知，供訂閱的 WebSocket 客戶端顯示。
-pub async fn send_waiting_notification(redis_url: &str, container_id: &str, cmd: &str) {
-    let payload = serde_json::json!({
-        "action": "WAITING",
-        "details": format!("Waiting [{}] for the task to complete [{}]", &container_id[..container_id.len().min(8)], cmd),
-        "data": { "container_id": container_id, "cmd": cmd }
-    });
-    let msg = serde_json::json!({ "message": payload });
-    if let Ok(client) = redis::Client::open(redis_url) {
-        if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
-            let _: Result<(), _> = conn.publish(NOTIFY_CHANNEL, msg.to_string()).await;
-        }
-    }
-}
-
-/// 將啟動/停止/刪除/重啟容器任務寫入佇列；回傳 task_id。
-pub async fn enqueue_containers_control(
-    redis_url: &str,
-    cmd: &str,
-    id: &str,
-) -> Option<String> {
-    let job = match cmd {
-        "start" => Job::StartContainer { id: id.to_string() },
-        "stop" => Job::StopContainer { id: id.to_string() },
-        "remove" => Job::RemoveContainer { id: id.to_string() },
-        "restart" => Job::RestartContainer { id: id.to_string() },
-        _ => return None,
-    };
-    let client = redis::Client::open(redis_url).ok()?;
-    let mut conn = client.get_multiplexed_async_connection().await.ok()?;
-    let task_id = new_task_id();
-    let payload = serde_json::to_string(&EnqueuedJob {
-        task_id: task_id.clone(),
-        job,
-    })
-    .ok()?;
-    conn.lpush::<_, _, ()>(QUEUE_KEY, payload.as_str()).await.ok()?;
-    Some(task_id)
-}
-
-/// 向 Redis 頻道發送一則通知（CREATED/STARTED/STOPPED 等），供 WebSocket 訂閱者使用。
-pub async fn publish_notification(redis_url: &str, action: &str, details: &str) {
-    let payload = serde_json::json!({ "action": action, "details": details });
-    let msg = serde_json::json!({ "message": payload });
-    if let Ok(client) = redis::Client::open(redis_url) {
-        if let Ok(mut conn) = client.get_multiplexed_async_connection().await {
-            let _: Result<(), _> = conn.publish(NOTIFY_CHANNEL, msg.to_string()).await;
-        }
-    }
 }
 
 pub use jobs::run_worker;
