@@ -17,12 +17,7 @@ use serde::Deserialize;
 use crate::auth_extractor::{AdminUser, AuthUser};
 use crate::db::user::{self, check_new_password, User, UserChanges};
 use crate::AppState;
-
-type ApiError = (StatusCode, Json<serde_json::Value>);
-
-fn api_error(status: StatusCode, message: impl ToString) -> ApiError {
-    (status, Json(serde_json::json!({ "error": message.to_string() })))
-}
+use super::{api_error, ApiError};
 
 fn db_error(e: sqlx::Error) -> ApiError {
     tracing::warn!("users api: {}", e);

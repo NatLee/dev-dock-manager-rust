@@ -19,12 +19,7 @@ use crate::db::User;
 use crate::docker::{self, ports, GuiContainer};
 use crate::queue::{self, Job, NewContainer, Notification};
 use crate::AppState;
-
-type ApiError = (StatusCode, Json<serde_json::Value>);
-
-fn api_error(status: StatusCode, message: impl ToString) -> ApiError {
-    (status, Json(serde_json::json!({ "error": message.to_string() })))
-}
+use super::{api_error, ApiError};
 
 /// 找出使用者可以操作的 GUI 容器；找不到或沒權限都回 404。
 pub async fn accessible_container(state: &AppState, user: &User, id: &str) -> Result<GuiContainer, ApiError> {
