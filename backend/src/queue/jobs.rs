@@ -11,10 +11,14 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 /// 常駐迴圈：連 Redis 與 Docker，BRPOP 取 job、執行 run_job、將結果經 notify_tx 廣播。
+///
+/// `shutdown` 變成 true（或 sender 被丟掉）時停止：等待中的 BRPOP 或重連會中斷，
+/// 但已經開始執行的 job 會做完，避免容器建到一半。
 pub async fn run_worker(
     redis_url: String,
     docker_network: String,
     notify_tx: tokio::sync::broadcast::Sender<String>,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
 ) {
     let docker = match crate::docker::connect() {
         Ok(d) => d,
@@ -31,16 +35,31 @@ pub async fn run_worker(
         }
     };
     loop {
-        let mut conn = match client.get_multiplexed_async_connection().await {
+        if *shutdown.borrow() {
+            break;
+        }
+        let connected = tokio::select! {
+            c = client.get_multiplexed_async_connection() => c,
+            _ = shutdown.changed() => break,
+        };
+        let mut conn = match connected {
             Ok(c) => c,
             Err(e) => {
                 tracing::warn!("Worker: Redis connection lost: {}; reconnecting...", e);
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                continue;
+                tokio::select! {
+                    _ = shutdown.changed() => break,
+                    _ = tokio::time::sleep(Duration::from_secs(2)) => continue,
+                }
             }
         };
-        let result: Result<(String, String), _> =
-            redis::cmd("BRPOP").arg(QUEUE_KEY).arg(5).query_async(&mut conn).await;
+        let mut brpop = redis::cmd("BRPOP");
+        brpop.arg(QUEUE_KEY).arg(5);
+        // biased：BRPOP 已經拿到 job 時先處理它，不要因為同時收到停止通知就丟掉。
+        let result: Result<(String, String), _> = tokio::select! {
+            biased;
+            r = brpop.query_async(&mut conn) => r,
+            _ = shutdown.changed() => break,
+        };
         let (_, payload) = match result {
             Ok(t) => t,
             Err(_) => continue,
@@ -64,6 +83,7 @@ pub async fn run_worker(
             }
         }
     }
+    tracing::info!("Worker: stopped");
 }
 
 async fn run_job(
