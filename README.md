@@ -28,17 +28,50 @@ version has a Rust API (axum + bollard) and a Next.js frontend, all behind Traef
 | Repo | What it is |
 |---|---|
 | [dev-dock](https://github.com/NatLee/dev-dock) | The `gui-vnc` image: Xfce desktop, VNC, noVNC and SSH in one container. Included here as `gui/`. |
-| [dev-dock-manager](https://github.com/NatLee/dev-dock-manager) | The original manager, with a Django (Python) API. |
-| **dev-dock-manager-rust** (this repo) | The same dashboard, routes and container setup, with the API rewritten in Rust. |
+| **dev-dock-manager-rust** (this repo) | **The recommended manager.** Dashboard + Rust API. |
+| [dev-dock-manager](https://github.com/NatLee/dev-dock-manager) | The older version of the same dashboard, with a Django (Python) API. |
 
-The two managers look the same from the browser and start the same containers, so pick one per machine.
-What differs is the backend:
+## Why this one
+
+Both managers have the same dashboard, the same routes, the same permission rules and the same account
+pages, and start the same containers. Pick one per machine. This one is the recommended choice: one small
+binary instead of Django + Daphne + an RQ worker under supervisord. In the measurements below it uses
+about a fiftieth of the memory, starts in about half a second instead of eight, and answers the dashboard's
+calls 2 to 15 times faster.
+
+| Measured (median) | dev-dock-manager-rust | dev-dock-manager (Django) |
+|---|---|---|
+| Backend image size | **144 MB** | 687 MB |
+| Backend memory when idle | **5.0 MiB** | 256 MiB |
+| Start-up (`docker start` → API answers) | **0.58 s** | 8.3 s |
+| Log in (`POST /api/auth/token`) | **18 ms** | 129 ms |
+| Who am I (`GET /dashboard/api/me`) | **3.0 ms** | 13.8 ms |
+| Container list (`GET /dashboard/api/containers`) | **478 ms** | 3,185 ms |
+| Image list (`GET /dashboard/api/images`) | **324 ms** | 4,973 ms |
+| Terminal metadata (`GET /dashboard/api/console/shell/<id>`) | **14 ms** | 27 ms |
+
+How it was measured (2026-11-04):
+- **Setup.** Both stacks were built from `main` and run one after the other on the same machine: 32 cores,
+  32 GB RAM, Docker Desktop 29.8.1 on x86_64, Traefik v3.7, Redis, one running desktop. The repo's own
+  compose file was used, with only names and ports changed.
+- **Image size** is what `docker image inspect` reports for the backend image. Both frontend images are the
+  same Next.js build, 295 MB each.
+- **Memory** is the backend container in `docker stats`, after a minute with no requests (3 readings).
+- **Start-up** is 5 runs of `docker stop` then `docker start` on the backend container, timed until
+  `/api/auth/token` answered through Traefik.
+- **Response times** come from 30 sequential requests per endpoint through Traefik, after 3 warm-up
+  requests, all with status 200.
+- **What it doesn't cover:** this is not a load test. The list endpoints depend on how much else runs on the
+  Docker host (this one had about 90 unrelated images). Django is slower there mostly because docker-py
+  inspects every image one by one and the container list also asks Docker for disk usage. Log-in time is
+  mostly password hashing (Argon2 here, Django's PBKDF2 there).
+
+Other differences:
 
 | | dev-dock-manager-rust | dev-dock-manager |
 |---|---|---|
-| API | one Rust binary (axum, bollard) | Django + Daphne, run by supervisord |
 | Background jobs | a worker task inside the API process, Redis list as the queue | a separate `rqworker` process (RQ) |
-| Users | `users` table in SQLite, Argon2 password hashes | Django users in SQLite |
+| Users | `users` table in SQLite, Argon2 password hashes | Django's users in SQLite |
 | Login tokens | access 1 hour, refresh 1 day | access 60 hours, refresh 1 day |
 | Extras | `/health` | Django admin and Swagger pages |
 
@@ -75,12 +108,13 @@ What each click does:
 1. **Log in.** The dashboard posts your username and password to `/api/auth/token` and keeps the access and
    refresh tokens (JWT) in the browser's localStorage. Every API call sends the access token.
 2. **Create.** The API checks the name (two characters or more, starting with a letter) and that the SSH port
-   is free, puts a job on the Redis queue and answers with a `task_id` right away.
+   is free, puts a job on the Redis queue and answers with a `task_id` right away. Only admins may tick "privileged".
 3. **The worker starts the container** from `gui-vnc`: your passwords as environment variables, port 22 on
    the SSH port you picked, `/etc/localtime` mounted read-only, the Traefik labels for `/novnc/<name>/`, and
-   optionally privileged mode or all NVIDIA GPUs.
-4. **The list refreshes** when `CREATED` arrives on the `/ws/notifications/` WebSocket.
-5. **Console** opens a WebSocket to `/ws/console/?container=<id>`, sends the token in the first message and
+   optionally privileged mode or all NVIDIA GPUs, plus the `dev-dock.owner` label with your user id.
+4. **The list refreshes** when `CREATED` arrives on the `/ws/notifications/` WebSocket. Notifications only go
+   to the desktop's owner and to admins.
+5. **Console** (your own desktops only; admins: any) opens a WebSocket to `/ws/console/?container=<id>`, sends the token in the first message and
    gets a `bash` started with `docker exec` (a root shell). **Attach** connects to the container's main
    process instead. Keys and window size go up as `pty_input` and `pty_resize`.
 6. **NoVNC** opens `/novnc/<name>/` through Traefik and asks for the VNC password you set when creating it.
