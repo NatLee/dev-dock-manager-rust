@@ -4,6 +4,7 @@ backend-data
 
 homes
 images
+!docs/images/
 
 log
 logs

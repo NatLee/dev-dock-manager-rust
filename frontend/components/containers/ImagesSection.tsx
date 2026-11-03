@@ -5,7 +5,7 @@ import { useImages } from "@/hooks/useImages";
 import { ImageCard } from "./ImageCard";
 
 const DOCKER_HUB_URL = "https://hub.docker.com/r/natlee/gui-vnc";
-const REPO_README_URL = "https://github.com/NatLee/dev-dock-manager#quick-start";
+const REPO_README_URL = "https://github.com/NatLee/dev-dock-manager-rust#quick-start";
 
 type Props = {
   onImageClick?: (image: Image) => void;
@@ -58,7 +58,7 @@ export function ImagesSection({ onImageClick }: Props) {
               <code className="rounded border border-border bg-background px-2 py-1 font-mono text-xs">
                 docker pull natlee/gui-vnc:&lt;TAG&gt;
               </code>
-              <span className="text-text-muted">(e.g. 20250208-x86 or 20250208-arm64 —</span>
+              <span className="text-text-muted">(e.g. 20260208-arm64 or 20241202-x86 —</span>
               <a
                 href={DOCKER_HUB_URL}
                 target="_blank"
