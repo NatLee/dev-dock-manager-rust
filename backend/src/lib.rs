@@ -114,30 +114,78 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             docker,
             notify_tx: notify_tx.clone(),
         };
-        let redis_url = config.redis_url.clone();
-        let docker_network = config.docker_network.clone();
-        tokio::spawn(async move {
-            queue::run_worker(redis_url, docker_network, notify_tx).await;
-        });
-        let app = router()
-            .layer(
-                CorsLayer::new()
-                    .allow_origin(Any)
-                    .allow_credentials(false),
-            )
-            .with_state(app_state);
+    let redis_url = config.redis_url.clone();
+    let docker_network = config.docker_network.clone();
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    let worker = tokio::spawn(async move {
+        queue::run_worker(redis_url, docker_network, notify_tx, shutdown_rx).await;
+    });
+    let app = router()
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_credentials(false),
+        )
+        .with_state(app_state);
 
-        let addr: SocketAddr = config
-            .bind_addr
-            .parse()
+    let addr: SocketAddr = config
+        .bind_addr
+        .parse()
         .unwrap_or_else(|_| "0.0.0.0:8000".parse().unwrap());
     tracing::info!("Rust API listening on {}", addr);
     axum::serve(
         tokio::net::TcpListener::bind(addr).await?,
         app,
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
+
+    // HTTP 已停止；通知 worker 不再取新任務，並等它做完手上那一個（docker stop 預設只給 10 秒）。
+    let _ = shutdown_tx.send(true);
+    if tokio::time::timeout(WORKER_SHUTDOWN_GRACE, worker).await.is_err() {
+        tracing::warn!(
+            "Queue worker still busy after {:?}; exiting anyway",
+            WORKER_SHUTDOWN_GRACE
+        );
+    }
+    tracing::info!("Rust API stopped");
     Ok(())
+}
+
+/// 收到終止訊號後，最多等 worker 多久（要小於 docker stop 預設的 10 秒）。
+const WORKER_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// 等待終止訊號：SIGINT（Ctrl+C）或 SIGTERM（`docker stop`、Kubernetes 停 Pod 時送的）。
+///
+/// 收到後 axum 會停止接受新連線，等進行中的請求處理完再讓 `run()` 返回。
+/// 在容器裡後台是 PID 1，沒有自己處理 SIGTERM 的話訊號會被忽略，只能等 runtime 改送 SIGKILL。
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(e) = tokio::signal::ctrl_c().await {
+            tracing::error!("Cannot listen for SIGINT: {}", e);
+            std::future::pending::<()>().await;
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(e) => {
+                tracing::error!("Cannot listen for SIGTERM: {}", e);
+                std::future::pending::<()>().await;
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => tracing::info!("Received SIGINT, shutting down"),
+        _ = terminate => tracing::info!("Received SIGTERM, shutting down"),
+    }
 }
 
 /// 建立使用者 CLI（對應 Django 的 createsuperuser / 建立帳號腳本）。
