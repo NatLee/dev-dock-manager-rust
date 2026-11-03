@@ -39,12 +39,10 @@ async fn list_containers(
     AuthUser(user): AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<ContainersResponse>, ApiError> {
-    let mut containers: Vec<_> = docker::list_gui_containers(&state.docker, &state.config.docker_image_name)
-        .await
-        .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e))?
-        .into_iter()
-        .filter(|c| user.can_access(c.owner_id))
-        .collect();
+    let mut containers =
+        docker::list_gui_containers(&state.docker, &state.config.docker_image_name, |owner| user.can_access(owner))
+            .await
+            .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
     // 填上主人的帳號名稱（管理員才會看到別人的容器）
     let owner_ids: HashSet<i64> = containers.iter().filter_map(|c| c.owner_id).collect();
     let mut names = HashMap::new();
