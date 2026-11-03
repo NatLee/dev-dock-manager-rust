@@ -6,7 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { apiFetch, errorMessage } from "@/lib/api";
 
 const inputClass =
-  "w-full rounded-lg border border-border bg-background-elevated px-3 py-2 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20";
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20";
 
 /** Every user can change their own password here, no admin needed. */
 export default function AccountPage() {
@@ -55,7 +55,7 @@ export default function AccountPage() {
       </div>
       <form
         onSubmit={changePassword}
-        className="space-y-4 rounded-xl border border-border bg-background-elevated p-5 shadow-sm"
+        className="space-y-4 rounded-xl border border-border bg-background p-5 shadow-sm"
       >
         <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">Change password</h3>
         <label className="block space-y-1 text-sm text-text">

@@ -7,7 +7,7 @@ import { apiFetch, errorMessage } from "@/lib/api";
 import type { Account } from "@/types/api";
 
 const inputClass =
-  "w-full rounded-lg border border-border bg-background-elevated px-3 py-2 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20";
+  "w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-text placeholder:text-text-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20";
 const buttonClass =
   "rounded-lg border border-border px-2 py-1 text-xs font-medium text-text transition-colors hover:bg-surface disabled:opacity-50";
 
@@ -102,7 +102,7 @@ export default function UsersPage() {
     <div className="mx-5 space-y-6">
       <h2 className="text-2xl font-semibold text-text">Users</h2>
 
-      <div className="overflow-x-auto rounded-xl border border-border bg-background-elevated shadow-sm">
+      <div className="overflow-x-auto rounded-xl border border-border bg-background shadow-sm">
         <table className="min-w-full divide-y divide-border text-sm">
           <thead className="bg-surface text-left text-xs font-semibold uppercase tracking-wider text-text-muted">
             <tr>
@@ -129,7 +129,7 @@ export default function UsersPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${u.is_active ? "bg-accent-green/15 text-accent-green" : "bg-accent-red/15 text-accent-red"}`}>
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${u.is_active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
                         {u.is_active ? "active" : "disabled"}
                       </span>
                     </td>
@@ -160,7 +160,7 @@ export default function UsersPage() {
 
       {resetFor && (
         <form onSubmit={submitReset}
-          className="flex max-w-xl flex-wrap items-end gap-3 rounded-xl border border-border bg-background-elevated p-4 shadow-sm">
+          className="flex max-w-xl flex-wrap items-end gap-3 rounded-xl border border-border bg-background p-4 shadow-sm">
           <label className="flex-1 space-y-1 text-sm text-text">
             <span>New password for {resetFor.username}</span>
             <input type="password" required autoComplete="new-password" value={resetPassword}
@@ -174,7 +174,7 @@ export default function UsersPage() {
       )}
 
       <form onSubmit={create}
-        className="max-w-xl space-y-3 rounded-xl border border-border bg-background-elevated p-5 shadow-sm">
+        className="max-w-xl space-y-3 rounded-xl border border-border bg-background p-5 shadow-sm">
         <h3 className="text-sm font-semibold uppercase tracking-wider text-text-muted">New user</h3>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm text-text">
