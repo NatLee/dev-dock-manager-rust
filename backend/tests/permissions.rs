@@ -48,6 +48,7 @@ impl Fixture {
             docker_network: "bridge".into(),
             host_for_port_check: "127.0.0.1".into(),
             docker_image_name: image_name.clone(),
+            nvidia_check_image: "nvidia/cuda:11.0.3-base-ubuntu20.04".into(),
         };
         let pool = connect_db(&config.database_url).await.unwrap();
         let docker = docker::connect().expect("these tests need the Docker socket");

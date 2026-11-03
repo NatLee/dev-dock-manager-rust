@@ -106,7 +106,7 @@ async fn nvdocker_check(
     _auth: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<NvidiaDockerResponse>, (axum::http::StatusCode, Json<NvidiaDockerResponse>)> {
-    let available = docker::nvidia::can_use_nvidia_docker(&state.docker).await;
+    let available = docker::nvidia::can_use_nvidia_docker(&state.docker, &state.config.nvidia_check_image).await;
     if available {
         Ok(Json(NvidiaDockerResponse {
             nvidia_docker_available: true,
