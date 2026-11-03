@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { getWsOrigin } from "@/lib/api";
+import { getAccessToken } from "@/lib/auth";
 
 type NotificationMessage = {
   message: {
@@ -47,6 +48,9 @@ export function useNotificationsWs(
       wsRef.current = ws;
 
       ws.onopen = () => {
+        // The first message carries the token, same as the console; the server then only sends
+        // notifications about containers this user may see.
+        ws.send(JSON.stringify({ token: getAccessToken() }));
         if (mountedRef.current) {
           setConnected(true);
           reconnectAttemptRef.current = 0;
