@@ -126,50 +126,59 @@ You need Linux with Docker running (the API talks to `/var/run/docker.sock`). On
    docker tag natlee/gui-vnc:20260208-arm64 gui-vnc
    ```
 
-3. **Create the network and start the stack:**
+3. **Set the login-token secret, create the network and start the stack:**
 
    ```bash
+   cp .env.example .env
+   sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$(openssl rand -base64 48)|" .env
    docker network create d-gui-network
    docker compose build && docker compose up -d
    ```
 
+   `JWT_SECRET` signs every login token, so it has no default: compose stops with a clear message if it's missing.
+
    The `nvidia-cuda` service only prints "CUDA image ready" and exits.
 
-4. **Create the first user:**
+4. **Create the first admin:**
 
    ```bash
    ./dev-tool.sh create-superuser
    ```
 
-   It asks for a username and password (defaults `admin` / `1234`). To skip the prompts or pass options:
-
-   ```bash
-   docker exec -it d-gui-manager-backend /app/dev-dock-manager-api create-user admin mypassword --staff
-   ```
+   It asks for a username and password (defaults `admin` / `1234`; change it on the Account page right
+   after). Everyone else gets an account from the **Users** page in the dashboard.
 
 5. **Open http://localhost:8000/** and log in. It sends you to `/dashboard/containers`.
 
 ## Good to know
 
-- **Opening it from another machine.** The dashboard calls the API at `NEXT_PUBLIC_API_ORIGIN` from
-  `frontend/.env.local`, which is `http://localhost:8000`, and Next.js bakes that in at build time. For any
-  other address, set it to that address, or leave it empty (`NEXT_PUBLIC_API_ORIGIN=`) so the dashboard uses
-  whatever address it was opened from. Then run `docker compose build frontend && docker compose up -d`.
+- **Opening it from another machine** just works: the dashboard talks to the API at whatever address it was
+  opened from. `NEXT_PUBLIC_API_ORIGIN` in `frontend/.env.local` is only for running the frontend on its own
+  (`npm run dev`), and Next.js bakes it in at build time.
 - **Ports.** 8000 is the app, 8080 is the Traefik dashboard. Each desktop also takes the SSH port you pick.
 - **Data.** Users live in `./backend-data/db.sqlite3`. The desktops are ordinary containers named after what
   you typed, so `docker ps` shows them.
-- **Keep the image name `gui-vnc`.** The API lists, creates and manages containers whose image starts with
-  `gui-vnc`. `DOCKER_IMAGE_NAME` only changes which images the dashboard lists.
+- **Image name.** The API creates, lists and manages containers from the image named `DOCKER_IMAGE_NAME`
+  (`gui-vnc` in `docker-compose.yml`), matched exactly, so a pulled image needs that tag.
 - **Stopping.** The API handles SIGTERM and SIGINT, so `docker compose stop` ends it cleanly in about a second.
+
+### Users and permissions
+
+- **Users** see and control only the desktops they created: the list, the terminal, NoVNC links, start,
+  stop and remove, and the live notifications. Someone else's desktop answers 404, as if it didn't exist.
+  Users change their own password on the **Account** page.
+- **Admins** see everyone's desktops (with an Owner column), are the only ones who can create privileged
+  containers, and manage accounts on the **Users** page: create users, make them admin or user, disable or
+  enable them, set a new password. Admins can't demote or disable themselves, so there's always a way back in.
+- A disabled account can't log in, and the tokens it already had stop working on the next request.
+- Ownership is a Docker label (`dev-dock.owner`) on each desktop. Desktops created before this existed have
+  no owner, so only admins see them.
 
 ### Before you put it on a network
 
-It's built for a trusted group on one machine. Every account can see and control every desktop (there's no
-per-user ownership), and can create privileged containers. With the Docker socket mounted, that amounts to
-root on the host. Also:
-
-- change `JWT_SECRET` in `docker-compose.yml` (the default is `change-me-in-production`);
-- the Traefik dashboard on 8080 runs with `--api.insecure`, so don't expose that port.
+The API holds the Docker socket, so an admin account is effectively root on the host. The Traefik dashboard
+on 8080 runs with `--api.insecure`, so don't expose that port. NoVNC pages are protected by each desktop's
+VNC password, not by the dashboard login.
 
 ## NVIDIA GPU
 
@@ -185,7 +194,7 @@ From the project root:
 ```
 
 - `bash`: shell in the backend container (`d-gui-manager-backend`).
-- `create-superuser`: create a login user (Rust `create-user`).
+- `create-superuser`: create an admin (Rust `create-user … --staff`).
 - `logs`: follow backend logs.
 - `backend-debug`: run the backend in a one-off container with `RUST_LOG=debug`.
 
@@ -195,11 +204,14 @@ From the project root:
   (e.g. `/api/auth/token`, `/dashboard/api/containers`, `/dashboard/api/ports`).
 - **Health**: `GET /health` → `ok`, on the API itself (port 8000 inside the Docker network). Traefik doesn't
   route `/health`, so `localhost:8000/health` from the host reaches the frontend and returns 404.
+- **Accounts**: `GET /me`, `POST /me/password` (`{current_password, new_password}`); admins only:
+  `GET`/`POST /users`, `PATCH /users/:id` (`{is_admin?, is_active?, email?}`),
+  `POST /users/:id/password` (`{new_password}`). New passwords need at least 8 characters.
 - **Web terminal**: the frontend calls `GET /dashboard/api/console/:action/:id` for metadata, then opens the
   WebSocket `/ws/console/?container=<container_id>`. The first message must carry the JWT:
   `{"token": "<access token>", "action": "shell" | "attach", "payload": {"Id": "<container_id>"}}`.
   After that, `pty_input` and `pty_resize` messages carry keys and window size.
-- **Notifications**: `/ws/notifications/` pushes `{"message": {"action": "CREATED" | "STARTED" | …, "details": "…"}}`.
+- **Notifications**: `/ws/notifications/` takes `{"token": "<access token>"}` as the first message, then pushes `{"message": {"action": "CREATED" | "STARTED" | …, "details": "…"}}`.
 
 **Backend layout**: `backend/src/api/` (auth, containers, images, ports), `backend/src/ws/` (console and
 notifications), `backend/src/docker/` (bollard), `backend/src/queue/` (Redis queue and worker),

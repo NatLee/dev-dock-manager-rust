@@ -22,7 +22,8 @@ services:
       - BIND_ADDR=0.0.0.0:8000
       - DATABASE_URL=sqlite:///app/data/db.sqlite3
       - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=change-me-in-production
+      # Signs the login tokens. Set it in .env (see .env.example); compose refuses to start without it.
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET in .env, see .env.example}
       - DOCKER_NETWORK=d-gui-network
       - DOCKER_IMAGE_NAME=gui-vnc
       - HOST_FOR_PORT_CHECK=host.docker.internal
