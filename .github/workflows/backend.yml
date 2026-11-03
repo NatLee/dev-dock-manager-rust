@@ -1,0 +1,55 @@
+name: Backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: cargo test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: backend
+      # No Cargo.lock in the repo (it is git-ignored), so this resolves the newest
+      # compatible versions, the same way the Dockerfile does.
+      - run: cargo test
+
+  docker-stop:
+    # The API runs as PID 1 in its image. Make sure `docker stop` (SIGTERM) shuts it
+    # down cleanly instead of waiting for the SIGKILL after 10 seconds.
+    name: docker image stops cleanly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the backend image
+        run: docker build -t dev-dock-manager-api backend
+      - name: Start it and wait until it listens
+        run: |
+          docker run -d --name api \
+            -e DATABASE_URL=sqlite::memory: \
+            -e REDIS_URL=redis://127.0.0.1:1 \
+            -v /var/run/docker.sock:/var/run/docker.sock:ro \
+            dev-dock-manager-api
+          for i in $(seq 1 60); do
+            docker logs api 2>&1 | grep -q "Rust API listening" && break
+            sleep 0.5
+          done
+          docker logs api
+      - name: docker stop must finish quickly with exit code 0
+        run: |
+          start=$(date +%s%N)
+          docker stop -t 10 api
+          elapsed_ms=$(( ($(date +%s%N) - start) / 1000000 ))
+          code=$(docker inspect -f '{{.State.ExitCode}}' api)
+          docker logs api
+          echo "docker stop took ${elapsed_ms} ms, exit code ${code}"
+          test "$code" -eq 0
+          test "$elapsed_ms" -lt 5000
