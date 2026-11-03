@@ -112,10 +112,22 @@ pub struct ContainerInfo {
     pub owner: Option<String>,
 }
 
-/// 列出用 GUI 映像建立的容器；每筆會 inspect 以取得名稱、狀態、埠、主人等。
+/// 容器列表裡的一筆可能是桌面嗎（還沒 inspect 之前的便宜檢查）。
+///
+/// Docker 列出的是建立容器時用的映像名稱；那個 tag 之後被移到新的映像時，改列映像 ID。
+/// 後者只有 inspect 看得出來（Config.Image 保留原本的名稱），所以先留著。
+pub fn may_be_gui_container(listed_image: &str, image_id: Option<&str>, image_name: &str) -> bool {
+    is_gui_image(listed_image, image_name) || image_id == Some(listed_image)
+}
+
+/// 列出用 GUI 映像建立、而且 `visible(主人的使用者 id)` 為真的容器。
+///
+/// 一次列出主機上所有容器，只 inspect（含大小）可能是桌面、這個人又看得到的那幾個。以前每個容器都
+/// inspect 加計算大小，主機上無關的容器一多，列表就要一秒以上。
 pub async fn list_gui_containers(
     docker: &Docker,
     image_name: &str,
+    visible: impl Fn(Option<i64>) -> bool,
 ) -> Result<Vec<ContainerInfo>, bollard::errors::Error> {
     let opts = ListContainersOptionsBuilder::default()
         .all(true)
@@ -125,7 +137,11 @@ pub async fn list_gui_containers(
     for c in summaries {
         let id = c.id.as_deref().unwrap_or("");
         let image = c.image.as_deref().unwrap_or("");
-        // Image in summary can be tag or id; we need to inspect to get tags and filter.
+        if !may_be_gui_container(image, c.image_id.as_deref(), image_name)
+            || !visible(owner_from_labels(c.labels.as_ref()))
+        {
+            continue;
+        }
         // size=true is required for SizeRw and SizeRootFs to be returned
         let inspect_opts = InspectContainerOptionsBuilder::default()
             .size(true)
@@ -205,8 +221,9 @@ pub async fn list_images(
     docker: &Docker,
     image_name: &str,
 ) -> Result<Vec<ImageInfo>, bollard::errors::Error> {
+    // Docker filters by repository name (any tag), so only the GUI image comes back.
     let opts = ListImagesOptionsBuilder::default()
-        .all(true)
+        .filters(&HashMap::from([("reference", vec![image_name])]))
         .build();
     let images = docker.list_images(Some(opts)).await?;
     let out = images
@@ -380,6 +397,17 @@ mod tests {
         assert_eq!(labels["traefik.http.routers.d-gui-alice.rule"], "PathPrefix(`/novnc/alice/`)");
         assert_eq!(labels["traefik.http.services.d-gui-alice.loadbalancer.server.port"], "6901");
         assert_eq!(labels["traefik.docker.network"], "d-gui-network");
+    }
+
+    #[test]
+    fn only_possible_desktops_get_inspected() {
+        let id = "sha256:".to_string() + &"f".repeat(64);
+        assert!(may_be_gui_container("gui-vnc", Some(&id), "gui-vnc"));
+        assert!(may_be_gui_container("gui-vnc:2.0.1", Some(&id), "gui-vnc"));
+        // the tag moved to a newer image: Docker lists the ID, the inspect decides
+        assert!(may_be_gui_container(&id, Some(&id), "gui-vnc"));
+        assert!(!may_be_gui_container("traefik:v3.7", Some(&id), "gui-vnc"));
+        assert!(!may_be_gui_container("natlee/gui-vnc:latest", Some(&id), "gui-vnc"));
     }
 
     #[test]
