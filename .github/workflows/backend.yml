@@ -36,6 +36,7 @@ jobs:
           docker run -d --name api \
             -e DATABASE_URL=sqlite::memory: \
             -e REDIS_URL=redis://127.0.0.1:1 \
+            -e JWT_SECRET=ci-docker-stop-check \
             -v /var/run/docker.sock:/var/run/docker.sock:ro \
             dev-dock-manager-api
           for i in $(seq 1 60); do

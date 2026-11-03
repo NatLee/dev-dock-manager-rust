@@ -15,7 +15,7 @@ Options:
 Subcommands:
   backend-debug     Run backend in foreground with RUST_LOG=debug (one-off container)
   bash              Open a bash shell in the backend container (d-gui-manager-backend)
-  create-superuser  Create a user for login (default: admin / 1234; pass --email, --staff as extra args)
+  create-superuser  Create an admin (default: admin / 1234; pass --email as an extra arg)
   logs              Follow backend container logs
 
 Examples:
@@ -23,7 +23,7 @@ Examples:
   ./dev-tool.sh bash
   ./dev-tool.sh backend-debug
   ./dev-tool.sh create-superuser
-  ./dev-tool.sh create-superuser admin mypass --staff
+  ./dev-tool.sh create-superuser admin mypass --email admin@example.com
   ./dev-tool.sh logs
 EOF
 }
@@ -50,7 +50,7 @@ case "${1:-}" in
     run_script "bash" "${@:2}"
     ;;
   create-superuser)
-    echo "Create backend user (press Enter to use default)."
+    echo "Create an admin (press Enter to use default)."
     read -r -p "Username [admin]: " input_username
     read -r -s -p "Password [1234]: " input_password
     echo

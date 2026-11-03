@@ -46,3 +46,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [profile.release]
 lto = true
 codegen-units = 1
+
+[dev-dependencies]
+# Drive the router in-process in tests (tower::ServiceExt::oneshot) and talk to the WebSocket routes.
+tower = { version = "0.4", features = ["util"] }
+tokio-tungstenite = "0.24"

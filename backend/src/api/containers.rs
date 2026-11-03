@@ -1,17 +1,39 @@
 //! 容器 REST API：列出 GUI 容器、建立（丟進佇列）、啟動/停止/刪除/重啟、取得 console 元資料。
 //! 與 Django xterm views 對齊（list、run、control、console meta）。
+//!
+//! 權限：一般使用者只看得到、只能操作自己建立的容器（owner label）；管理員全部都可以。
+//! 不能碰的容器一律回 404，不透露它存在。只有管理員能建立 privileged 容器。
+
+use std::collections::{HashMap, HashSet};
 
 use axum::{
     extract::{Path, State},
+    http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::auth_extractor::AuthUser;
-use crate::docker;
-use crate::docker::ports;
+use crate::db::User;
+use crate::docker::{self, ports, GuiContainer};
+use crate::queue::{self, Job, NewContainer, Notification};
 use crate::AppState;
+
+type ApiError = (StatusCode, Json<serde_json::Value>);
+
+fn api_error(status: StatusCode, message: impl ToString) -> ApiError {
+    (status, Json(serde_json::json!({ "error": message.to_string() })))
+}
+
+/// 找出使用者可以操作的 GUI 容器；找不到或沒權限都回 404。
+pub async fn accessible_container(state: &AppState, user: &User, id: &str) -> Result<GuiContainer, ApiError> {
+    docker::find_gui_container(&state.docker, id, &state.config.docker_image_name)
+        .await
+        .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e))?
+        .filter(|c| user.can_access(c.owner_id))
+        .ok_or_else(|| api_error(StatusCode::NOT_FOUND, "Container not found"))
+}
 
 #[derive(Serialize)]
 pub struct ContainersResponse {
@@ -19,24 +41,38 @@ pub struct ContainersResponse {
 }
 
 async fn list_containers(
-    _auth: AuthUser,
+    AuthUser(user): AuthUser,
     State(state): State<AppState>,
-) -> Result<Json<ContainersResponse>, (axum::http::StatusCode, String)> {
-    let containers = docker::list_containers_gui_vnc(&state.docker)
+) -> Result<Json<ContainersResponse>, ApiError> {
+    let mut containers: Vec<_> = docker::list_gui_containers(&state.docker, &state.config.docker_image_name)
         .await
-        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e))?
+        .into_iter()
+        .filter(|c| user.can_access(c.owner_id))
+        .collect();
+    // 填上主人的帳號名稱（管理員才會看到別人的容器）
+    let owner_ids: HashSet<i64> = containers.iter().filter_map(|c| c.owner_id).collect();
+    let mut names = HashMap::new();
+    for id in owner_ids {
+        if let Ok(Some(owner)) = crate::db::get_by_id(&state.pool, id).await {
+            names.insert(id, owner.username);
+        }
+    }
+    for c in &mut containers {
+        c.owner = c.owner_id.and_then(|id| names.get(&id).cloned());
+    }
     Ok(Json(ContainersResponse { containers }))
 }
 
 async fn console_meta(
-    auth: AuthUser,
+    AuthUser(user): AuthUser,
     State(state): State<AppState>,
     Path((action, id)): Path<(String, String)>,
-) -> Result<Json<docker::ConsoleMeta>, (axum::http::StatusCode, String)> {
-    let _ = auth;
-    let meta = docker::get_console_meta(&state.docker, &id, &action)
+) -> Result<Json<docker::ConsoleMeta>, ApiError> {
+    let container = accessible_container(&state, &user, &id).await?;
+    let meta = docker::get_console_meta(&state.docker, &container.id, &action)
         .await
-        .map_err(|e| (axum::http::StatusCode::NOT_FOUND, e.to_string()))?;
+        .map_err(|e| api_error(StatusCode::NOT_FOUND, e))?;
     Ok(Json(meta))
 }
 
@@ -61,70 +97,55 @@ pub struct RunContainerResponse {
 }
 
 async fn run_container(
-    auth: AuthUser,
+    AuthUser(user): AuthUser,
     State(state): State<AppState>,
     Json(body): Json<RunContainerBody>,
-) -> Result<Json<RunContainerResponse>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    let _ = auth;
+) -> Result<Json<RunContainerResponse>, ApiError> {
+    if body.privileged && !user.is_staff {
+        return Err(api_error(StatusCode::FORBIDDEN, "Only admins can create privileged containers"));
+    }
     let name = body.container_name.replace('/', "-");
     if name.len() < 2 {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Container name must be at least 2 characters long" })),
-        ));
+        return Err(api_error(StatusCode::BAD_REQUEST, "Container name must be at least 2 characters long"));
     }
-    if !name.chars().next().map_or(false, |c| c.is_ascii_alphabetic()) {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Container name must start with a letter [a-zA-Z]" })),
-        ));
+    if !name.chars().next().is_some_and(|c| c.is_ascii_alphabetic()) {
+        return Err(api_error(StatusCode::BAD_REQUEST, "Container name must start with a letter [a-zA-Z]"));
     }
-    let ssh_port: u16 = body.ssh.parse().map_err(|_| {
-        (
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "Non-integer value provided" })),
-        )
-    })?;
+    let ssh_port: u16 = body
+        .ssh
+        .parse()
+        .map_err(|_| api_error(StatusCode::BAD_REQUEST, "Non-integer value provided"))?;
     if docker::is_port_used_by_container(&state.docker, ssh_port)
         .await
-        .map_err(|e| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({ "error": e.to_string() })),
-            )
-        })?
+        .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e))?
     {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": format!("Port [{}] is already in use by container", ssh_port) })),
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            format!("Port [{}] is already in use by container", ssh_port),
         ));
     }
     if ports::check_port_in_use(&state.config.host_for_port_check, ssh_port) {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": format!("Port [{}] is already in use by other services", ssh_port) })),
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            format!("Port [{}] is already in use by other services", ssh_port),
         ));
     }
-    let task_id = crate::queue::enqueue_run_image(
-        &state.config.redis_url,
-        &state.config.docker_network,
-        docker::GUI_IMAGE_TAG_PREFIX,
+    let spec = NewContainer {
+        image_name: state.config.docker_image_name.clone(),
+        name: name.clone(),
         ssh_port,
-        &name,
-        &body.user,
-        &body.password,
-        &body.vnc_password,
-        &body.root_password,
-        body.privileged,
-        body.nvdocker,
-    )
-    .await
-    .map_err(|e| {
-        (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": e.to_string() })),
-        )
-    })?;
+        user: body.user,
+        password: body.password,
+        vnc_password: body.vnc_password,
+        root_password: body.root_password,
+        privileged: body.privileged,
+        nvdocker: body.nvdocker,
+        docker_network: state.config.docker_network.clone(),
+        owner_id: user.id,
+    };
+    let task_id = queue::enqueue(&state.config.redis_url, Some(user.id), Job::RunImage(spec))
+        .await
+        .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(RunContainerResponse {
         container_name: name,
         task_id,
@@ -139,36 +160,26 @@ pub struct ContainersControlBody {
 
 #[derive(Serialize)]
 pub struct ContainersControlResponse {
-    pub task_id: Option<String>,
+    pub task_id: String,
 }
 
 async fn containers_control(
-    auth: AuthUser,
+    AuthUser(user): AuthUser,
     State(state): State<AppState>,
     Json(body): Json<ContainersControlBody>,
-) -> Result<Json<ContainersControlResponse>, (axum::http::StatusCode, Json<serde_json::Value>)> {
-    let _ = auth;
-    let valid = ["start", "stop", "restart", "remove"];
-    if !valid.contains(&body.cmd.as_str()) {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({ "error": "invalid cmd" })),
-        ));
-    }
-    let task_id = if ["start", "restart", "stop", "remove"].contains(&body.cmd.as_str()) {
-        let waiting_msg = serde_json::json!({
-            "message": {
-                "action": "WAITING",
-                "details": format!("Waiting [{}] for the task to complete [{}]", &body.id[..body.id.len().min(8)], body.cmd),
-                "data": { "container_id": &body.id, "cmd": &body.cmd }
-            }
-        });
-        let _ = state.notify_tx.send(waiting_msg.to_string());
-        crate::queue::enqueue_containers_control(&state.config.redis_url, &body.cmd, &body.id)
-            .await
-    } else {
-        None
-    };
+) -> Result<Json<ContainersControlResponse>, ApiError> {
+    let container = accessible_container(&state, &user, &body.id).await?;
+    let job = Job::control(&body.cmd, &container.id).ok_or_else(|| api_error(StatusCode::BAD_REQUEST, "invalid cmd"))?;
+    let short_id: String = body.id.chars().take(8).collect();
+    let _ = state.notify_tx.send(Notification::new(
+        container.owner_id,
+        "WAITING",
+        &format!("Waiting [{}] for the task to complete [{}]", short_id, body.cmd),
+        Some(serde_json::json!({ "container_id": body.id, "cmd": body.cmd })),
+    ));
+    let task_id = queue::enqueue(&state.config.redis_url, container.owner_id, job)
+        .await
+        .map_err(|e| api_error(StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(Json(ContainersControlResponse { task_id }))
 }
 

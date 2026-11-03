@@ -1,4 +1,5 @@
 //! 終端機 WebSocket：先連線（query 僅 ?container=ID），第一則訊息須帶 token 驗證後才處理。
+//! 只能對自己的 GUI 容器開 shell 或 attach（管理員可以對全部），其他容器一律當成找不到。
 //! 對應 Django ConsoleConsumer：建立 exec 或 attach 取得 Docker 串流，轉發到 WebSocket；支援 PTY 輸入與 resize。
 
 use axum::{
@@ -7,8 +8,6 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use axum::http::StatusCode;
-use std::sync::atomic::{AtomicBool, Ordering};
-use bollard::models::ContainerStateStatusEnum;
 use bollard::query_parameters::AttachContainerOptionsBuilder;
 use bollard::container::LogOutput;
 use bollard::exec::{CreateExecOptions, ResizeExecOptions, StartExecOptions};
@@ -17,8 +16,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::db::get_by_id;
-use crate::jwt;
+use crate::db::User;
+use crate::docker::{self, GuiContainer};
 use crate::AppState;
 
 /// Query 參數：?container=CONTAINER_ID（token 改由第一則訊息傳送，避免進 URL/log）
@@ -50,27 +49,18 @@ struct Session {
     stdin_tx: Option<Arc<Mutex<Pin<Box<dyn tokio::io::AsyncWrite + Send>>>>>,
 }
 
-fn close_unauthorized() -> Option<CloseFrame<'static>> {
-    use axum::extract::ws::close_code;
-    Some(CloseFrame {
-        code: close_code::POLICY,
-        reason: std::borrow::Cow::Borrowed("Unauthorized"),
-    })
-}
-
 async fn handle_socket(socket: WebSocket, state: Arc<AppState>, _container_id: String) {
     let (ws_tx, mut ws_rx) = socket.split();
     let session: Arc<Mutex<Option<Session>>> = Arc::new(Mutex::new(None));
-    let authenticated = Arc::new(AtomicBool::new(false));
 
     let session_clone = session.clone();
     let state_clone = state.clone();
-    let auth_clone = authenticated.clone();
 
     let ws_tx = Arc::new(Mutex::new(ws_tx));
     let ws_tx_recv = ws_tx.clone();
 
     let recv_task = tokio::spawn(async move {
+        let mut user: Option<User> = None;
         while let Some(msg) = ws_rx.next().await {
             match msg {
                 Ok(Message::Text(text)) => {
@@ -78,33 +68,22 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, _container_id: S
                         Ok(p) => p,
                         Err(_) => continue,
                     };
-                    let is_first = !auth_clone.load(Ordering::Relaxed);
-                    if is_first {
-                        let token = parsed.get("token").and_then(|t| t.as_str()).map(str::to_string);
-                        let token = match token {
-                            Some(t) if !t.is_empty() => t,
-                            _ => {
-                                let _ = ws_tx_recv.lock().await.send(Message::Close(close_unauthorized())).await;
-                                break;
-                            }
-                        };
-                        let claims = match jwt::verify_access(&token, state_clone.config.jwt_secret.as_bytes()) {
-                            Ok(c) => c,
+                    if user.is_none() {
+                        let token = parsed.get("token").and_then(|t| t.as_str()).unwrap_or("");
+                        match crate::auth_extractor::authenticate(&state_clone, token).await {
+                            Ok(u) => user = Some(u),
                             Err(_) => {
-                                let _ = ws_tx_recv.lock().await.send(Message::Close(close_unauthorized())).await;
+                                let _ = ws_tx_recv.lock().await.send(Message::Close(super::close_unauthorized())).await;
                                 break;
                             }
-                        };
-                        if get_by_id(&state_clone.pool, claims.user_id).await.ok().flatten().is_none() {
-                            let _ = ws_tx_recv.lock().await.send(Message::Close(close_unauthorized())).await;
-                            break;
                         }
-                        auth_clone.store(true, Ordering::Relaxed);
                     }
+                    let Some(current_user) = user.as_ref() else { break };
                     let action = parsed.get("action").and_then(|a| a.as_str());
                     let payload = parsed.get("payload").cloned().unwrap_or_default();
                     if let Err(e) = handle_message(
                         &state_clone,
+                        current_user,
                         &session_clone,
                         action,
                         payload,
@@ -113,6 +92,10 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, _container_id: S
                     .await
                     {
                         tracing::warn!("console message error: {}", e);
+                        let _ = ws_tx_recv.lock().await.send(Message::Close(Some(CloseFrame {
+                            code: CLOSE_NOT_FOUND,
+                            reason: std::borrow::Cow::Owned(e),
+                        }))).await;
                         break;
                     }
                 }
@@ -130,8 +113,25 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>, _container_id: S
     }
 }
 
+/// 找不到容器、不是自己的或沒在跑時用的 close code（4000 起是應用程式自己定義的範圍）。
+const CLOSE_NOT_FOUND: u16 = 4004;
+
+/// 使用者可以開終端機的容器：存在、是 GUI 容器、自己的（或管理員），而且在跑。
+async fn permitted_container(state: &AppState, user: &User, id: &str) -> Result<GuiContainer, String> {
+    let container = docker::find_gui_container(&state.docker, id, &state.config.docker_image_name)
+        .await
+        .map_err(|e| e.to_string())?
+        .filter(|c| user.can_access(c.owner_id))
+        .ok_or("container not found")?;
+    if !container.running {
+        return Err("container not running".into());
+    }
+    Ok(container)
+}
+
 async fn handle_message(
     state: &AppState,
+    user: &User,
     session: &Arc<Mutex<Option<Session>>>,
     action: Option<&str>,
     payload: serde_json::Value,
@@ -143,14 +143,16 @@ async fn handle_message(
                 .get("Id")
                 .and_then(|v| v.as_str())
                 .ok_or("shell: missing Id")?;
-            start_shell(state, session, id, ws_tx).await
+            let container = permitted_container(state, user, id).await?;
+            start_shell(state, session, &container.id, ws_tx).await
         }
         Some("attach") => {
             let id = payload
                 .get("Id")
                 .and_then(|v| v.as_str())
                 .ok_or("attach: missing Id")?;
-            start_attach(state, session, id, ws_tx).await
+            let container = permitted_container(state, user, id).await?;
+            start_attach(state, session, &container.id, ws_tx).await
         }
         Some("pty_input") => {
             let input = payload
@@ -187,34 +189,12 @@ async fn handle_message(
     }
 }
 
-/// 查詢容器是否為 running 狀態（inspect 的 state.status == RUNNING）。
-fn container_running<'a>(
-    docker: &'a bollard::Docker,
-    id: &'a str,
-) -> impl std::future::Future<Output = bool> + 'a {
-    async move {
-        let inspect = match docker.inspect_container(id, None).await {
-            Ok(i) => i,
-            Err(_) => return false,
-        };
-        inspect
-            .state
-            .as_ref()
-            .and_then(|s| s.status.as_ref())
-            .map(|st| matches!(st, ContainerStateStatusEnum::RUNNING))
-            .unwrap_or(false)
-    }
-}
-
 async fn start_shell(
     state: &AppState,
     session: &Arc<Mutex<Option<Session>>>,
     container_id: &str,
     ws_tx: &Arc<Mutex<futures_util::stream::SplitSink<WebSocket, Message>>>,
 ) -> Result<(), String> {
-    if !container_running(&state.docker, container_id).await {
-        return Err("container not running".into());
-    }
     let pid_path = format!("/tmp/_process_{}.pid", uuid::Uuid::new_v4());
     let create_opts = CreateExecOptions::<String> {
         attach_stdin: Some(true),
@@ -264,9 +244,6 @@ async fn start_attach(
     container_id: &str,
     ws_tx: &Arc<Mutex<futures_util::stream::SplitSink<WebSocket, Message>>>,
 ) -> Result<(), String> {
-    if !container_running(&state.docker, container_id).await {
-        return Err("container not running".into());
-    }
     let opts = AttachContainerOptionsBuilder::default()
         .stdin(true)
         .stdout(true)

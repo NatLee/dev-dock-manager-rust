@@ -19,11 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy binary, migrations and entrypoint
+# The binary carries its migrations (sqlx::migrate!) and creates the database folder itself
 COPY --from=builder /app/target/release/dev-dock-manager-api /app/
-COPY --from=builder /app/migrations /app/migrations
-COPY docker-entrypoint.sh /docker-entrypoint.sh
-RUN chmod +x /docker-entrypoint.sh
 
 # Default env (override in docker-compose)
 ENV BIND_ADDR=0.0.0.0:8000
@@ -38,5 +35,4 @@ EXPOSE 8000
 # Persist sqlite DB in /app/data
 VOLUME ["/app/data"]
 
-ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["/app/dev-dock-manager-api"]

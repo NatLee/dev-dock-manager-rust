@@ -9,6 +9,7 @@ import {
   useRunContainer,
 } from "@/hooks/useNewContainerForm";
 import type { RunContainerBody } from "@/types/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Props = {
   open: boolean;
@@ -54,6 +55,7 @@ export function NewContainerModal({ open, onClose, onSuccess }: Props) {
   const checkPort = usePortCheck();
   const { nvdockerAvailable, fetchNvdocker } = useNvdockerCheck();
   const { run, loading, error } = useRunContainer();
+  const { me } = useAuth();
 
   useEffect(() => {
     if (open) {
@@ -270,15 +272,17 @@ export function NewContainerModal({ open, onClose, onSuccess }: Props) {
                 Options
               </h3>
               <div className="flex flex-wrap gap-4">
-                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface/50 px-4 py-2.5 transition-colors hover:bg-surface focus-within:ring-1 focus-within:ring-primary/20">
-                  <input
-                    type="checkbox"
-                    checked={form.privileged}
-                    onChange={(e) => handleChange("privileged", e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary"
-                  />
-                  <span className="text-sm font-medium text-text">Privileged mode</span>
-                </label>
+                {me?.is_admin && (
+                  <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-surface/50 px-4 py-2.5 transition-colors hover:bg-surface focus-within:ring-1 focus-within:ring-primary/20">
+                    <input
+                      type="checkbox"
+                      checked={form.privileged}
+                      onChange={(e) => handleChange("privileged", e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-border text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm font-medium text-text">Privileged mode (admins only)</span>
+                  </label>
+                )}
                 <label
                   className={`flex cursor-pointer items-center gap-2 rounded-lg border border-border px-4 py-2.5 transition-colors focus-within:ring-1 focus-within:ring-primary/20 ${
                     nvdockerDisabled

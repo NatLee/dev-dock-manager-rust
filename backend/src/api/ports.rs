@@ -8,6 +8,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::auth_extractor::AuthUser;
 use crate::docker;
 use crate::docker::ports;
 use crate::AppState;
@@ -49,6 +50,7 @@ pub struct PortCheckQuery {
 }
 
 async fn free_ports(
+    _auth: AuthUser,
     State(state): State<AppState>,
     Query(q): Query<FreePortsQuery>,
 ) -> Result<Json<FreePortsResponse>, (axum::http::StatusCode, Json<serde_json::Value>)> {
@@ -75,6 +77,7 @@ async fn free_ports(
 }
 
 async fn check_port(
+    _auth: AuthUser,
     State(state): State<AppState>,
     Query(q): Query<PortCheckQuery>,
 ) -> Result<Json<PortCheckResponse>, (axum::http::StatusCode, Json<serde_json::Value>)> {
@@ -100,6 +103,7 @@ async fn check_port(
 }
 
 async fn nvdocker_check(
+    _auth: AuthUser,
     State(state): State<AppState>,
 ) -> Result<Json<NvidiaDockerResponse>, (axum::http::StatusCode, Json<NvidiaDockerResponse>)> {
     let available = docker::nvidia::can_use_nvidia_docker(&state.docker).await;
@@ -117,7 +121,7 @@ async fn nvdocker_check(
     }
 }
 
-async fn linux_check() -> Json<LinuxCheckResponse> {
+async fn linux_check(_auth: AuthUser) -> Json<LinuxCheckResponse> {
     Json(LinuxCheckResponse {
         is_linux: docker::is_linux(),
     })

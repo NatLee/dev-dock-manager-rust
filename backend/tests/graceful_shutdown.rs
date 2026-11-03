@@ -43,6 +43,7 @@ fn start_api(port: u16) -> Child {
         .env("BIND_ADDR", format!("127.0.0.1:{port}"))
         .env("DATABASE_URL", "sqlite::memory:")
         .env("REDIS_URL", "redis://127.0.0.1:1")
+        .env("JWT_SECRET", "graceful-shutdown-test")
         .env("RUST_LOG", "warn")
         .stdout(Stdio::null())
         .stderr(Stdio::inherit())

@@ -1,5 +1,5 @@
 //! 透過 bollard 操作 Docker：列容器/映像、解析埠、NVIDIA 檢測、console 元資料。
-//! 與 Django 的容器/映像/埠邏輯對齊；僅處理使用 gui-vnc 前綴的映像。
+//! 與 Django 的容器/映像/埠邏輯對齊；只處理用設定裡的映像名稱（DOCKER_IMAGE_NAME）建立的容器。
 
 pub mod nvidia;
 pub mod ports;
@@ -12,8 +12,80 @@ use std::collections::HashMap;
 
 use ports::parse_ports_bollard;
 
-/// 映像 tag 前綴，用於篩選 GUI 容器/映像（與 Django DOCKER_IMAGE_NAME 一致）。
-pub const GUI_IMAGE_TAG_PREFIX: &str = "gui-vnc";
+/// dev-dock 映像裡 noVNC 和 sshd 聽的 port（映像的 NO_VNC_PORT、SSH_PORT）。
+pub const GUI_NOVNC_PORT: u16 = 6901;
+pub const GUI_SSH_PORT: u16 = 22;
+
+/// 記錄容器主人（使用者 id）的 label；Django 版用同一個名稱。
+pub const OWNER_LABEL: &str = "dev-dock.owner";
+
+/// 映像參照去掉 tag 或 digest 後的名稱：`gui-vnc:latest` → `gui-vnc`，
+/// `registry:5000/team/gui-vnc:1` → `registry:5000/team/gui-vnc`。
+pub fn image_repository(reference: &str) -> &str {
+    let reference = reference.split('@').next().unwrap_or(reference);
+    let last_segment_start = reference.rfind('/').map_or(0, |i| i + 1);
+    match reference[last_segment_start..].rfind(':') {
+        Some(i) => &reference[..last_segment_start + i],
+        None => reference,
+    }
+}
+
+/// 這個映像參照是不是 GUI 映像：名稱（不含 tag）完全等於設定的映像名稱。
+pub fn is_gui_image(reference: &str, image_name: &str) -> bool {
+    image_repository(reference) == image_name
+}
+
+/// 從容器 label 讀出主人的使用者 id；沒有或格式不對就是沒有主人。
+pub fn owner_from_labels(labels: Option<&HashMap<String, String>>) -> Option<i64> {
+    labels?.get(OWNER_LABEL)?.parse().ok()
+}
+
+/// 管理介面建立的容器要帶的 label：主人，以及讓 Traefik 把 /novnc/<name>/ 轉到它的 noVNC。
+pub fn gui_container_labels(name: &str, docker_network: &str, novnc_port: u16, owner_id: i64) -> HashMap<String, String> {
+    let router = format!("d-gui-{name}");
+    HashMap::from([
+        (OWNER_LABEL.to_string(), owner_id.to_string()),
+        ("traefik.enable".to_string(), "true".to_string()),
+        (format!("traefik.http.routers.{router}.rule"), format!("PathPrefix(`/novnc/{name}/`)")),
+        (format!("traefik.http.services.{router}.loadbalancer.server.port"), novnc_port.to_string()),
+        (format!("traefik.http.middlewares.{router}-strip-prefix.stripprefix.prefixes"), format!("/novnc/{name}/")),
+        (format!("traefik.http.routers.{router}.middlewares"), format!("{router}-strip-prefix")),
+        ("traefik.docker.network".to_string(), docker_network.to_string()),
+    ])
+}
+
+/// 一個 GUI 容器的身分：id、名稱、主人、是否在跑。
+#[derive(Debug, Clone)]
+pub struct GuiContainer {
+    pub id: String,
+    pub name: String,
+    pub owner_id: Option<i64>,
+    pub running: bool,
+}
+
+/// 依 id 或名稱找 GUI 容器；不存在或不是用 GUI 映像建立的都回傳 None。
+/// 所有「對某個容器做事」的 API 都先經過這裡，再用 User::can_access 判斷能不能碰。
+pub async fn find_gui_container(
+    docker: &Docker,
+    id: &str,
+    image_name: &str,
+) -> Result<Option<GuiContainer>, bollard::errors::Error> {
+    let inspect = match docker.inspect_container(id, None).await {
+        Ok(i) => i,
+        Err(bollard::errors::Error::DockerResponseServerError { status_code: 404, .. }) => return Ok(None),
+        Err(e) => return Err(e),
+    };
+    let config = inspect.config.as_ref();
+    if !config.and_then(|c| c.image.as_deref()).is_some_and(|img| is_gui_image(img, image_name)) {
+        return Ok(None);
+    }
+    Ok(Some(GuiContainer {
+        id: inspect.id.clone().unwrap_or_else(|| id.to_string()),
+        name: inspect.name.as_deref().unwrap_or(id).trim_start_matches('/').to_string(),
+        owner_id: owner_from_labels(config.and_then(|c| c.labels.as_ref())),
+        running: inspect.state.as_ref().and_then(|s| s.running).unwrap_or(false),
+    }))
+}
 
 /// 建立 Docker 連線（依環境 DOCKER_HOST / 本機預設）。
 pub fn connect() -> Result<Docker, bollard::errors::Error> {
@@ -34,11 +106,16 @@ pub struct ContainerInfo {
     pub nvdocker: bool,
     pub size_raw: i64,
     pub size_fs: i64,
+    /// 主人的使用者 id（舊的、沒有 label 的容器是 None）
+    pub owner_id: Option<i64>,
+    /// 主人的帳號名稱，由 API 填入（只有管理員看得到別人的容器，所以只對管理員有用）
+    pub owner: Option<String>,
 }
 
-/// 列出使用 gui-vnc 前綴映像的容器；每筆會 inspect 以取得名稱、狀態、埠等。
-pub async fn list_containers_gui_vnc(
+/// 列出用 GUI 映像建立的容器；每筆會 inspect 以取得名稱、狀態、埠、主人等。
+pub async fn list_gui_containers(
     docker: &Docker,
+    image_name: &str,
 ) -> Result<Vec<ContainerInfo>, bollard::errors::Error> {
     let opts = ListContainersOptionsBuilder::default()
         .all(true)
@@ -62,7 +139,7 @@ pub async fn list_containers_gui_vnc(
             .as_ref()
             .and_then(|cfg| cfg.image.as_deref())
             .unwrap_or(image);
-        if !image_tag.starts_with(GUI_IMAGE_TAG_PREFIX) {
+        if !is_gui_image(image_tag, image_name) {
             continue;
         }
         let name = inspect
@@ -105,6 +182,8 @@ pub async fn list_containers_gui_vnc(
             nvdocker,
             size_raw: inspect.size_rw.unwrap_or(0),
             size_fs: inspect.size_root_fs.unwrap_or(0),
+            owner_id: owner_from_labels(inspect.config.as_ref().and_then(|c| c.labels.as_ref())),
+            owner: None,
         });
     }
     Ok(out)
@@ -117,11 +196,11 @@ pub struct ImageInfo {
     pub size: f64,
     pub short_id: String,
     pub name: Option<String>,
-    /// All tags containing the image name (e.g. gui-vnc:latest), same as Django.
+    /// All tags of this image that are named after the GUI image (e.g. gui-vnc:latest).
     pub tags: Vec<String>,
 }
 
-/// List images whose tags contain `image_name` (e.g. gui-vnc), matching Django ImagesListView.
+/// List images that have at least one tag named `image_name` (e.g. gui-vnc:latest).
 pub async fn list_images(
     docker: &Docker,
     image_name: &str,
@@ -136,7 +215,7 @@ pub async fn list_images(
             let tags: &[String] = &img.repo_tags;
             let matching: Vec<String> = tags
                 .iter()
-                .filter(|t: &&String| t.contains(image_name))
+                .filter(|t: &&String| is_gui_image(t, image_name))
                 .cloned()
                 .collect();
             if matching.is_empty() {
@@ -271,4 +350,42 @@ pub async fn get_console_meta(
         command,
         action: action.to_string(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_repository_drops_tag_and_digest_only() {
+        assert_eq!(image_repository("gui-vnc"), "gui-vnc");
+        assert_eq!(image_repository("gui-vnc:latest"), "gui-vnc");
+        assert_eq!(image_repository("gui-vnc@sha256:abc"), "gui-vnc");
+        assert_eq!(image_repository("natlee/gui-vnc:2.1.0"), "natlee/gui-vnc");
+        assert_eq!(image_repository("registry:5000/team/gui-vnc:1"), "registry:5000/team/gui-vnc");
+    }
+
+    #[test]
+    fn gui_image_needs_the_exact_name() {
+        assert!(is_gui_image("gui-vnc:latest", "gui-vnc"));
+        assert!(!is_gui_image("dev-dock-gui-vnc:e2e", "gui-vnc"));
+        assert!(!is_gui_image("gui-vnc-old:1", "gui-vnc"));
+        assert!(!is_gui_image("natlee/gui-vnc:latest", "gui-vnc"));
+    }
+
+    #[test]
+    fn labels_carry_the_owner_and_the_novnc_route() {
+        let labels = gui_container_labels("alice", "d-gui-network", GUI_NOVNC_PORT, 7);
+        assert_eq!(owner_from_labels(Some(&labels)), Some(7));
+        assert_eq!(labels["traefik.http.routers.d-gui-alice.rule"], "PathPrefix(`/novnc/alice/`)");
+        assert_eq!(labels["traefik.http.services.d-gui-alice.loadbalancer.server.port"], "6901");
+        assert_eq!(labels["traefik.docker.network"], "d-gui-network");
+    }
+
+    #[test]
+    fn missing_or_bad_owner_label_means_no_owner() {
+        assert_eq!(owner_from_labels(None), None);
+        let labels = HashMap::from([(OWNER_LABEL.to_string(), "not-a-number".to_string())]);
+        assert_eq!(owner_from_labels(Some(&labels)), None);
+    }
 }
