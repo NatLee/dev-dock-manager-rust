@@ -27,6 +27,8 @@ services:
       - DOCKER_NETWORK=d-gui-network
       - DOCKER_IMAGE_NAME=gui-vnc
       - HOST_FOR_PORT_CHECK=host.docker.internal
+      # Optional, from .env: image the GPU check runs nvidia-smi in (default in backend/src/config.rs)
+      - NVIDIA_CHECK_IMAGE
     volumes:
       - ./backend-data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro

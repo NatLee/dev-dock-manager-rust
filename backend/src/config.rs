@@ -13,6 +13,8 @@ pub struct Config {
     pub host_for_port_check: String,
     /// GUI 容器用的映像名稱（例如 gui-vnc）：建立容器、列出容器和映像都用這個名稱。
     pub docker_image_name: String,
+    /// GPU 檢查執行 nvidia-smi 用的映像（NVIDIA_CHECK_IMAGE，和 Django 版同名）。
+    pub nvidia_check_image: String,
 }
 
 /// SQLite 的位置；伺服器和命令列的 create-user 共用。
@@ -37,6 +39,7 @@ impl Config {
             docker_network: var("DOCKER_NETWORK", "d-gui-network"),
             host_for_port_check: var("HOST_FOR_PORT_CHECK", "host.docker.internal"),
             docker_image_name: var("DOCKER_IMAGE_NAME", "gui-vnc"),
+            nvidia_check_image: var("NVIDIA_CHECK_IMAGE", "nvidia/cuda:11.0.3-base-ubuntu20.04"),
         })
     }
 }
