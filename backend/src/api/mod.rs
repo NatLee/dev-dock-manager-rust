@@ -7,7 +7,7 @@ mod images;
 mod ports;
 mod users;
 
-use axum::Router;
+use axum::{http::StatusCode, Json, Router};
 
 use crate::AppState;
 
@@ -19,4 +19,11 @@ pub fn router() -> Router<AppState> {
         .merge(images::router())
         .merge(ports::router())
         .merge(users::router())
+}
+
+/// Error answer of the JSON API: an HTTP status and `{"error": "..."}` (what the dashboard shows).
+pub(crate) type ApiError = (StatusCode, Json<serde_json::Value>);
+
+pub(crate) fn api_error(status: StatusCode, message: impl ToString) -> ApiError {
+    (status, Json(serde_json::json!({ "error": message.to_string() })))
 }
