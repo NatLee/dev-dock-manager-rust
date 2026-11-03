@@ -38,11 +38,13 @@ jobs:
             -e JWT_SECRET=ci-docker-stop-check \
             -v /var/run/docker.sock:/var/run/docker.sock:ro \
             dev-dock-manager-api
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             docker logs api 2>&1 | grep -q "Rust API listening" && break
             sleep 0.5
           done
           docker logs api
+          # The image sets no BIND_ADDR, so this is the default from src/config.rs
+          docker logs api 2>&1 | grep "Rust API listening on 0.0.0.0:8000"
       - name: docker stop must finish quickly with exit code 0
         run: |
           start=$(date +%s%N)

@@ -22,13 +22,11 @@ WORKDIR /app
 # The binary carries its migrations (sqlx::migrate!) and creates the database folder itself
 COPY --from=builder /app/target/release/dev-dock-manager-api /app/
 
-# Default env (override in docker-compose)
-ENV BIND_ADDR=0.0.0.0:8000
+# Only what differs from the defaults in src/config.rs: the database goes in the volume below, and Redis
+# is the compose service called redis. Everything else uses the program's defaults (docker-compose.yml
+# sets them explicitly anyway).
 ENV DATABASE_URL=sqlite:///app/data/db.sqlite3
 ENV REDIS_URL=redis://redis:6379
-ENV DOCKER_NETWORK=d-gui-network
-ENV DOCKER_IMAGE_NAME=gui-vnc
-ENV HOST_FOR_PORT_CHECK=host.docker.internal
 
 EXPOSE 8000
 
