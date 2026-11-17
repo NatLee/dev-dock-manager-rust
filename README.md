@@ -15,7 +15,7 @@ Xfce desktop in the browser (NoVNC), a web terminal and an SSH port, without tou
 version has a Rust API (axum + bollard) and a Next.js frontend, all behind Traefik.
 
 <p align="center">
-  <img src="./doc/workflow.gif" alt="Logging in, creating a container, opening its web terminal and its desktop in NoVNC">
+  <img src="./docs/images/workflow.gif" alt="Logging in, creating a container, opening its web terminal and its desktop in NoVNC">
 </p>
 
 ## The Dev Dock family
@@ -127,16 +127,16 @@ What each click does:
 ## Interface
 
 - **Login**
-  ![login](./doc/login.gif)
+  ![login](./docs/images/login.gif)
 
 - **Create container**
-  ![create](./doc/create.gif)
+  ![create](./docs/images/create.gif)
 
 - **Web terminal**
-  ![web terminal](./doc/console.gif)
+  ![web terminal](./docs/images/console.gif)
 
 - **NoVNC**
-  ![novnc](./doc/novnc.gif)
+  ![novnc](./docs/images/novnc.gif)
 
 ## Quick start
 
