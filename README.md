@@ -1,10 +1,8 @@
+![Dev Dock Manager (Rust): a self-hosted dashboard that hands everyone on one machine their own Linux desktop, in the browser (NoVNC), in a web terminal or over SSH](docs/images/cover.webp)
+
 <div align="center">
 
 # **Dev Dock Manager (Rust)**
-
-<p>
-  <img src="./doc/workflow.gif" alt="Logging in, creating a container, opening its web terminal and its desktop in NoVNC">
-</p>
 
 <a href="https://github.com/NatLee/dev-dock-manager-rust/actions/workflows/backend.yml"><img src="https://github.com/NatLee/dev-dock-manager-rust/actions/workflows/backend.yml/badge.svg" alt="Backend CI"></a>
 <a href="./LICENSE"><img src="https://img.shields.io/github/license/NatLee/dev-dock-manager-rust" alt="License: MIT"></a>
@@ -15,6 +13,10 @@ Dev Dock Manager is a small self-hosted dashboard for handing out Linux desktops
 logs in, creates a container from the [dev-dock](https://github.com/NatLee/dev-dock) image, and gets a full
 Xfce desktop in the browser (NoVNC), a web terminal and an SSH port, without touching Docker themselves. This
 version has a Rust API (axum + bollard) and a Next.js frontend, all behind Traefik.
+
+<p align="center">
+  <img src="./doc/workflow.gif" alt="Logging in, creating a container, opening its web terminal and its desktop in NoVNC">
+</p>
 
 ## The Dev Dock family
 
